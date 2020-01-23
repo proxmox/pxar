@@ -1,0 +1,233 @@
+//! *pxar* binary format definition
+//!
+//! Please note the all values are stored in little endian ordering.
+//!
+//! The Archive contains a list of items. Each item starts with a `Header`, followed by the
+//! item data.
+
+use std::cmp::Ordering;
+use std::io;
+use std::mem::size_of;
+use std::path::Path;
+
+use endian_trait::Endian;
+use siphasher::sip::SipHasher24;
+
+pub mod acl;
+
+pub const PXAR_ENTRY: u64 = 0x1396fabcea5bbb51;
+pub const PXAR_FILENAME: u64 = 0x6dbb6ebcb3161f0b;
+pub const PXAR_SYMLINK: u64 = 0x664a6fb6830e0d6c;
+pub const PXAR_DEVICE: u64 = 0xac3dace369dfe643;
+pub const PXAR_XATTR: u64 = 0xb8157091f80bc486;
+pub const PXAR_ACL_USER: u64 = 0x297dc88b2ef12faf;
+pub const PXAR_ACL_GROUP: u64 = 0x36f2acb56cb3dd0b;
+pub const PXAR_ACL_GROUP_OBJ: u64 = 0x23047110441f38f3;
+pub const PXAR_ACL_DEFAULT: u64 = 0xfe3eeda6823c8cd0;
+pub const PXAR_ACL_DEFAULT_USER: u64 = 0xbdf03df9bd010a91;
+pub const PXAR_ACL_DEFAULT_GROUP: u64 = 0xa0cb1168782d1f51;
+pub const PXAR_FCAPS: u64 = 0xf7267db0afed0629;
+pub const PXAR_QUOTA_PROJID: u64 = 0x161baf2d8772a72b;
+
+/// Marks item as hardlink
+/// compute_goodbye_hash(b"__PROXMOX_FORMAT_HARDLINK__");
+pub const PXAR_HARDLINK: u64 = 0x2c5e06f634f65b86;
+/// Marks the beginnig of the payload (actual content) of regular files
+pub const PXAR_PAYLOAD: u64 = 0x8b9e1d93d6dcffc9;
+/// Marks item as entry of goodbye table
+pub const PXAR_GOODBYE: u64 = 0xdfd35c5e8327c403;
+/// The end marker used in the GOODBYE object
+pub const PXAR_GOODBYE_TAIL_MARKER: u64 = 0x57446fa533702943;
+
+#[derive(Debug, Endian)]
+#[repr(C)]
+pub struct Header {
+    /// The item type (see `PXAR_` constants).
+    pub htype: u64,
+    /// The size of the item, including the size of `Header`.
+    full_size: u64,
+}
+
+impl Header {
+    #[inline]
+    pub fn full_size(&self) -> u64 {
+        self.full_size
+    }
+
+    #[inline]
+    pub fn content_size(&self) -> u64 {
+        self.full_size() - (size_of::<Self>() as u64)
+    }
+}
+
+#[derive(Clone, Debug, Default, Endian)]
+#[repr(C)]
+pub struct Entry {
+    pub mode: u64,
+    pub flags: u64,
+    pub uid: u32,
+    pub gid: u32,
+    pub mtime: u64,
+}
+
+#[derive(Clone, Debug)]
+pub struct Filename {
+    pub name: Vec<u8>,
+}
+
+#[derive(Clone, Debug)]
+pub struct Symlink {
+    pub data: Vec<u8>,
+}
+
+#[derive(Clone, Debug)]
+pub struct Hardlink {
+    pub data: Vec<u8>,
+}
+
+#[derive(Clone, Debug, Eq)]
+#[repr(C)]
+pub struct XAttr {
+    pub(crate) data: Vec<u8>,
+    pub(crate) name_len: usize,
+}
+
+impl XAttr {
+    pub fn new<N: AsRef<[u8]>, V: AsRef<[u8]>>(name: N, value: V) -> Self {
+        let name = name.as_ref();
+        let value = value.as_ref();
+        let mut data = Vec::with_capacity(name.len() + value.len() + 1);
+        data.extend(name);
+        data.push(0);
+        data.extend(value);
+        Self {
+            data,
+            name_len: name.len(),
+        }
+    }
+
+    pub fn name(&self) -> &[u8] {
+        &self.data[..self.name_len]
+    }
+
+    pub fn value(&self) -> &[u8] {
+        &self.data[(self.name_len + 1)..]
+    }
+}
+
+impl Ord for XAttr {
+    fn cmp(&self, other: &XAttr) -> Ordering {
+        self.name().cmp(&other.name())
+    }
+}
+
+impl PartialOrd for XAttr {
+    fn partial_cmp(&self, other: &XAttr) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for XAttr {
+    fn eq(&self, other: &XAttr) -> bool {
+        self.name() == other.name()
+    }
+}
+
+#[derive(Clone, Debug, Endian)]
+#[repr(C)]
+pub struct Device {
+    pub major: u64,
+    pub minor: u64,
+}
+
+#[derive(Clone, Debug)]
+#[repr(C)]
+pub struct FCaps {
+    pub data: Vec<u8>,
+}
+
+#[derive(Clone, Debug, Endian)]
+#[repr(C)]
+pub struct QuotaProjectId {
+    pub projid: u64,
+}
+
+#[derive(Debug, Endian)]
+#[repr(C)]
+pub struct GoodbyeItem {
+    /// SipHash24 of the directory item name. The last GOODBYE item uses the special hash value
+    /// `PXAR_GOODBYE_TAIL_MARKER`.
+    pub hash: u64,
+
+    /// The offset from the start of the GOODBYE object to the start of the matching directory item
+    /// (point to a FILENAME). The last GOODBYE item points to the start of the matching ENTRY
+    /// object.
+    pub offset: u64,
+
+    /// The overall size of the directory item. This includes the FILENAME header. In other words,
+    /// `goodbye_start - offset + size` points to the end of the directory.
+    ///
+    /// The last GOODBYE item repeats the size of the GOODBYE item.
+    pub size: u64,
+}
+
+impl GoodbyeItem {
+    pub fn new(name: &[u8], offset: u64, size: u64) -> Self {
+        let hash = hash_filename(name);
+        Self { hash, offset, size }
+    }
+}
+
+pub fn hash_filename(name: &[u8]) -> u64 {
+    use std::hash::Hasher;
+    let mut hasher = SipHasher24::new_with_keys(0x8574442b0f1d84b3, 0x2736ed30d1c22ec1);
+    hasher.write(name);
+    hasher.finish()
+}
+
+/*
+pub fn search_binary_tree_array<F, T>(table: &[T], key: &T) -> Option<usize>
+where
+    T: Ord,
+    F: FnMut(&T) -> std::cmp::Ordering,
+{
+    search_binary_tree_array_by(table, |elem| key.cmp(elem))
+}
+*/
+
+pub fn search_binary_tree_array_by<F, T>(table: &[T], mut f: F) -> Option<usize>
+where
+    F: FnMut(&T) -> Ordering,
+{
+    let mut i = 0;
+
+    while !table.is_empty() {
+        match f(&table[i]) {
+            Ordering::Equal => return Some(i),
+            Ordering::Less => i = 2 * i + 1,
+            Ordering::Greater => i = 2 * i + 2,
+        }
+        if i >= table.len() {
+            break;
+        }
+    }
+
+    None
+}
+
+pub fn path_is_legal_component(path: &Path) -> bool {
+    let mut components = path.components();
+    match components.next() {
+        Some(std::path::Component::Normal(_)) => (),
+        _ => return false,
+    }
+    components.next().is_none()
+}
+
+pub fn check_file_name(path: &Path) -> io::Result<()> {
+    if !path_is_legal_component(path) {
+        io_bail!("invalid file name in archive: {:?}", path);
+    } else {
+        Ok(())
+    }
+}

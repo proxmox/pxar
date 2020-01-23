@@ -1,0 +1,553 @@
+//! The `pxar` decoder state machine.
+//!
+//! This is the implementation used by both the synchronous and async pxar wrappers.
+
+use std::convert::TryFrom;
+use std::ffi::OsString;
+use std::io;
+use std::mem::{self, size_of, size_of_val, MaybeUninit};
+use std::os::unix::ffi::{OsStrExt, OsStringExt};
+use std::path::{Path, PathBuf};
+use std::pin::Pin;
+use std::task::{Context, Poll};
+
+//use std::os::unix::fs::FileExt;
+
+use endian_trait::Endian;
+
+use crate::format::{self, Header};
+use crate::poll_fn::poll_fn;
+use crate::util::{self, io_err_other};
+use crate::{Entry, EntryKind, Metadata};
+
+pub mod aio;
+pub mod sync;
+
+#[doc(inline)]
+pub use sync::Decoder;
+
+/// To skip through non-seekable files.
+static mut SCRATCH_BUFFER: MaybeUninit<[u8; 4096]> = MaybeUninit::uninit();
+
+fn scratch_buffer() -> &'static mut [u8] {
+    unsafe { &mut (*SCRATCH_BUFFER.as_mut_ptr())[..] }
+}
+
+/// Sequential read interface used by the decoder's state machine.
+///
+/// To simply iterate through a directory we just need the equivalent of `poll_read()`.
+///
+/// Currently we also have a `poll_position()` method which can be added for types supporting
+/// `Seek` or `AsyncSeek`. In this case the starting position of each entry becomes available
+/// (accessible via the `Entry::offset()`), to allow jumping between entries.
+pub trait SeqRead {
+    /// Mostly we want to read sequentially, so this is basically an `AsyncRead` equivalent.
+    fn poll_seq_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context,
+        buf: &mut [u8],
+    ) -> Poll<io::Result<usize>>;
+
+    /// While going through the data we may want to take notes about some offsets within the file
+    /// for later. If the reader does not support seeking or positional reading, this can just
+    /// return `None`.
+    fn poll_position(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<Option<io::Result<u64>>> {
+        Poll::Ready(None)
+    }
+}
+
+/// Allow using trait objects for generics taking a `SeqRead`:
+impl<'a> SeqRead for &mut (dyn SeqRead + 'a) {
+    fn poll_seq_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context,
+        buf: &mut [u8],
+    ) -> Poll<io::Result<usize>> {
+        unsafe {
+            self.map_unchecked_mut(|this| &mut **this)
+                .poll_seq_read(cx, buf)
+        }
+    }
+
+    fn poll_position(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<io::Result<u64>>> {
+        unsafe { self.map_unchecked_mut(|this| &mut **this).poll_position(cx) }
+    }
+}
+
+/// We do not want to bother with actual polling, so we implement `async fn` variants of the above
+/// on `dyn SeqRead`.
+///
+/// The reason why this is not an internal `SeqReadExt` trait like `AsyncReadExt` is simply that
+/// we'd then need to define all the `Future` types they return manually and explicitly. Since we
+/// have no use for them, all we want is the ability to use `async fn`...
+///
+/// The downside is that we need some `(&mut self.input as &mut dyn SeqRead)` casts in the
+/// decoder's code, but that's fine.
+impl<'a> dyn SeqRead + 'a {
+    /// awaitable version of `poll_position`.
+    async fn position(&mut self) -> Option<io::Result<u64>> {
+        poll_fn(|cx| unsafe { Pin::new_unchecked(&mut *self).poll_position(cx) }).await
+    }
+
+    /// awaitable version of `poll_seq_read`.
+    async fn seq_read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        poll_fn(|cx| unsafe { Pin::new_unchecked(&mut *self).poll_seq_read(cx, buf) }).await
+    }
+
+    /// `read_exact` - since that's what we _actually_ want most of the time, but with EOF handling
+    async fn seq_read_exact_or_eof(&mut self, mut buf: &mut [u8]) -> io::Result<Option<()>> {
+        let mut eof_ok = true;
+        while !buf.is_empty() {
+            match self.seq_read(buf).await? {
+                0 if eof_ok => break,
+                0 => io_bail!("unexpected EOF"),
+                got => buf = &mut buf[got..],
+            }
+            eof_ok = false;
+        }
+        Ok(Some(()))
+    }
+
+    /// `read_exact` - since that's what we _actually_ want most of the time.
+    async fn seq_read_exact(&mut self, buf: &mut [u8]) -> io::Result<()> {
+        match self.seq_read_exact_or_eof(buf).await? {
+            Some(()) => Ok(()),
+            None => io_bail!("unexpected eof"),
+        }
+    }
+
+    /// Helper to read into an allocated byte vector.
+    async fn seq_read_exact_data(&mut self, size: usize) -> io::Result<Vec<u8>> {
+        let mut data = util::vec_new(size);
+        self.seq_read_exact(&mut data[..]).await?;
+        Ok(data)
+    }
+
+    /// `seq_read_entry` with EOF handling
+    async fn seq_read_entry_or_eof<T: Endian>(&mut self) -> io::Result<Option<T>> {
+        let mut data = MaybeUninit::<T>::uninit();
+        let buf =
+            unsafe { std::slice::from_raw_parts_mut(data.as_mut_ptr() as *mut u8, size_of::<T>()) };
+        if self.seq_read_exact_or_eof(buf).await?.is_none() {
+            return Ok(None);
+        }
+        Ok(Some(unsafe { data.assume_init().from_le() }))
+    }
+
+    /// Helper to read into an `Endian`-implementing `struct`.
+    async fn seq_read_entry<T: Endian>(&mut self) -> io::Result<T> {
+        self.seq_read_entry_or_eof()
+            .await?
+            .ok_or_else(|| io_format_err!("unexepcted EOF"))
+    }
+}
+
+/// The decoder state machine implementation.
+///
+/// We use `async fn` to implement the decoder state machine so that we can easily plug in both
+/// synchronous or `async` I/O objects in as input.
+pub struct DecoderImpl<T> {
+    input: T,
+    current_header: Header,
+    entry: Entry,
+    path_lengths: Vec<usize>,
+    state: State,
+    with_goodbye_tables: bool,
+}
+
+enum State {
+    Begin,
+    Default,
+    InPayload,
+    InDirectory,
+    Eof,
+}
+
+/// Control flow while parsing items.
+///
+/// When parsing an entry, we usually go through all of its attribute items. Once we reach the end
+/// of the entry we stop.
+/// Note that if we're in a directory, we stopped at the beginning of its contents.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ItemResult {
+    /// We parsed an "attribute" item and should continue parsing.
+    Attribute,
+
+    /// We finished an entry (`SYMLINK`, `HARDLINK`, ...) or just entered the contents of a
+    /// directory (`FILENAME`, `GOODBYE`).
+    ///
+    /// We stop moving forward at this point.
+    Entry,
+}
+
+impl<T: SeqRead> DecoderImpl<T> {
+    pub async fn new(input: T) -> io::Result<Self> {
+        Self::new_full(input, "/".into()).await
+    }
+
+    pub(crate) async fn new_full(mut input: T, path: PathBuf) -> io::Result<Self> {
+        let offset = (&mut input as &mut dyn SeqRead)
+            .position()
+            .await
+            .transpose()?;
+        let this = DecoderImpl {
+            input,
+            current_header: unsafe { mem::zeroed() },
+            entry: Entry {
+                path,
+                kind: EntryKind::EndOfDirectory,
+                metadata: Metadata::default(),
+                offset,
+            },
+            path_lengths: Vec::new(),
+            state: State::Begin,
+            with_goodbye_tables: false,
+        };
+
+        // this.read_next_entry().await?;
+
+        Ok(this)
+    }
+
+    /// Get the next file entry, recursing into directories.
+    pub async fn next(&mut self) -> Option<io::Result<Entry>> {
+        self.next_do().await.transpose()
+    }
+
+    pub(crate) async fn next_do(&mut self) -> io::Result<Option<Entry>> {
+        loop {
+            match self.state {
+                State::Eof => return Ok(None),
+                State::Begin => return self.read_next_entry().await.map(Some),
+                State::Default => {
+                    // we completely finished an entry, so now we're going "up" in the directory
+                    // hierarchy and parse the next PXAR_FILENAME or the PXAR_GOODBYE:
+                    self.read_next_item().await?;
+                }
+                State::InPayload => {
+                    // We need to skip the current payload first.
+                    self.skip_entry().await?;
+                    self.read_next_item().await?;
+                }
+                State::InDirectory => {
+                    // We're at the next FILENAME or GOODBYE item.
+                }
+            }
+
+            match self.current_header.htype {
+                format::PXAR_FILENAME => return self.handle_file_entry().await,
+                format::PXAR_GOODBYE => {
+                    if self.with_goodbye_tables {
+                        self.entry.kind = EntryKind::EndOfDirectory;
+                        let offset = (&mut self.input as &mut dyn SeqRead)
+                            .position()
+                            .await
+                            .transpose()?;
+                        self.entry.offset = offset;
+                        self.state = State::InPayload;
+                        return Ok(Some(self.entry.take()));
+                    }
+
+                    self.skip_entry().await?;
+                    if self.path_lengths.pop().is_some() {
+                        self.state = State::Default;
+                        // and move on:
+                        continue;
+                    } else {
+                        self.state = State::Eof;
+                        // early out:
+                        return Ok(None);
+                    }
+                }
+                h => io_bail!(
+                    "expected filename or directory-goodbye pxar entry, got: {:x}",
+                    h
+                ),
+            }
+        }
+    }
+
+    async fn handle_file_entry(&mut self) -> io::Result<Option<Entry>> {
+        let mut data = self.read_entry_as_bytes().await?;
+
+        // filenames are zero terminated!
+        if data.pop() != Some(0) {
+            io_bail!("illegal path found (missing terminating zero)");
+        }
+        if data.is_empty() {
+            io_bail!("illegal path found (empty)");
+        }
+
+        let path = PathBuf::from(OsString::from_vec(data));
+        self.set_path(&path)?;
+        self.read_next_entry().await.map(Some)
+    }
+
+    fn reset_path(&mut self) -> io::Result<()> {
+        let path_len = *self
+            .path_lengths
+            .last()
+            .ok_or_else(|| io_format_err!("internal decoder error: path underrun"))?;
+        let mut path = mem::replace(&mut self.entry.path, PathBuf::new())
+            .into_os_string()
+            .into_vec();
+        path.truncate(path_len);
+        self.entry.path = PathBuf::from(OsString::from_vec(path));
+        Ok(())
+    }
+
+    fn set_path(&mut self, path: &Path) -> io::Result<()> {
+        self.reset_path()?;
+        self.entry.path.push(path);
+        Ok(())
+    }
+
+    async fn read_next_entry_or_eof(&mut self) -> io::Result<Option<Entry>> {
+        self.state = State::Default;
+        self.entry.clear_data();
+
+        #[derive(Endian)]
+        #[repr(C)]
+        struct WithHeader<U: Endian> {
+            header: Header,
+            data: U,
+        }
+
+        let entry: WithHeader<format::Entry> = {
+            let input: &mut dyn SeqRead = &mut self.input;
+            match input.seq_read_entry_or_eof().await? {
+                None => return Ok(None),
+                Some(entry) => entry,
+            }
+        };
+
+        if entry.header.htype != format::PXAR_ENTRY {
+            io_bail!(
+                "expected pxar entry of type 'Entry', got: {:x}",
+                entry.header.htype
+            );
+        }
+
+        self.current_header = unsafe { mem::zeroed() };
+        self.entry.metadata = Metadata {
+            stat: entry.data,
+            ..Default::default()
+        };
+
+        while self.read_next_item().await? != ItemResult::Entry {}
+
+        if self.entry.is_dir() {
+            self.path_lengths
+                .push(self.entry.path.as_os_str().as_bytes().len());
+        }
+
+        Ok(Some(self.entry.take()))
+    }
+
+    async fn read_next_entry(&mut self) -> io::Result<Entry> {
+        self.read_next_entry_or_eof()
+            .await?
+            .ok_or_else(|| io_format_err!("unexpected EOF"))
+    }
+
+    async fn read_next_item(&mut self) -> io::Result<ItemResult> {
+        self.read_next_header().await?;
+        self.read_current_item().await
+    }
+
+    async fn read_next_header(&mut self) -> io::Result<()> {
+        let dest = unsafe {
+            std::slice::from_raw_parts_mut(
+                &mut self.current_header as *mut Header as *mut u8,
+                size_of_val(&self.current_header),
+            )
+        };
+        (&mut self.input as &mut dyn SeqRead)
+            .seq_read_exact(dest)
+            .await?;
+        Ok(())
+    }
+
+    /// Read the next item, the header is already loaded.
+    async fn read_current_item(&mut self) -> io::Result<ItemResult> {
+        match self.current_header.htype {
+            format::PXAR_XATTR => {
+                let xattr = self.read_xattr().await?;
+                self.entry.metadata.xattrs.push(xattr);
+            }
+            format::PXAR_ACL_USER => {
+                let entry = self.read_acl_user().await?;
+                self.entry.metadata.acl.users.push(entry);
+            }
+            format::PXAR_ACL_GROUP => {
+                let entry = self.read_acl_group().await?;
+                self.entry.metadata.acl.groups.push(entry);
+            }
+            format::PXAR_ACL_GROUP_OBJ => {
+                if self.entry.metadata.acl.group_obj.is_some() {
+                    io_bail!("multiple acl group object entries detected");
+                }
+                let entry = self.read_acl_group_object().await?;
+                self.entry.metadata.acl.group_obj = Some(entry);
+            }
+            format::PXAR_ACL_DEFAULT => {
+                if self.entry.metadata.acl.default.is_some() {
+                    io_bail!("multiple acl default entries detected");
+                }
+                let entry = self.read_acl_default().await?;
+                self.entry.metadata.acl.default = Some(entry);
+            }
+            format::PXAR_ACL_DEFAULT_USER => {
+                let entry = self.read_acl_user().await?;
+                self.entry.metadata.acl.default_users.push(entry);
+            }
+            format::PXAR_ACL_DEFAULT_GROUP => {
+                let entry = self.read_acl_group().await?;
+                self.entry.metadata.acl.default_groups.push(entry);
+            }
+            format::PXAR_FCAPS => {
+                if self.entry.metadata.fcaps.is_some() {
+                    io_bail!("multiple file capability entries detected");
+                }
+                let entry = self.read_fcaps().await?;
+                self.entry.metadata.fcaps = Some(entry);
+            }
+            format::PXAR_QUOTA_PROJID => {
+                if self.entry.metadata.quota_project_id.is_some() {
+                    io_bail!("multiple quota project id entries detected");
+                }
+                let entry = self.read_quota_project_id().await?;
+                self.entry.metadata.quota_project_id = Some(entry);
+            }
+            format::PXAR_SYMLINK => {
+                self.entry.kind = EntryKind::Symlink(self.read_symlink().await?);
+                return Ok(ItemResult::Entry);
+            }
+            format::PXAR_HARDLINK => {
+                self.entry.kind = EntryKind::Hardlink(self.read_hardlink().await?);
+                return Ok(ItemResult::Entry);
+            }
+            format::PXAR_DEVICE => {
+                self.entry.kind = EntryKind::Device(self.read_device().await?);
+                return Ok(ItemResult::Entry);
+            }
+            format::PXAR_PAYLOAD => {
+                self.entry.kind = EntryKind::File {
+                    size: self.current_header.content_size(),
+                };
+                self.state = State::InPayload;
+                return Ok(ItemResult::Entry);
+            }
+            format::PXAR_FILENAME | format::PXAR_GOODBYE => {
+                self.state = State::InDirectory;
+                self.entry.kind = EntryKind::Directory;
+                return Ok(ItemResult::Entry);
+            }
+            _ => io_bail!("unexpected entry type: {:x}", self.current_header.htype),
+        }
+
+        Ok(ItemResult::Attribute)
+    }
+
+    //
+    // Local read helpers.
+    //
+    // These utilize additional information and hence are not part of the `dyn SeqRead` impl.
+    //
+
+    async fn skip_entry(&mut self) -> io::Result<()> {
+        let mut len = self.current_header.content_size();
+        let scratch = scratch_buffer();
+        while len >= (scratch.len() as u64) {
+            (&mut self.input as &mut dyn SeqRead)
+                .seq_read_exact(scratch)
+                .await?;
+            len -= scratch.len() as u64;
+        }
+        let len = len as usize;
+        if len > 0 {
+            (&mut self.input as &mut dyn SeqRead)
+                .seq_read_exact(&mut scratch[..len])
+                .await?;
+        }
+        Ok(())
+    }
+
+    async fn read_entry_as_bytes(&mut self) -> io::Result<Vec<u8>> {
+        let size = usize::try_from(self.current_header.content_size()).map_err(io_err_other)?;
+        let data = (&mut self.input as &mut dyn SeqRead)
+            .seq_read_exact_data(size)
+            .await?;
+        Ok(data)
+    }
+
+    /// Helper to read a struct entry while checking its size.
+    async fn read_simple_entry<U: Endian + 'static>(
+        &mut self,
+        what: &'static str,
+    ) -> io::Result<U> {
+        if self.current_header.content_size() != (size_of::<T>() as u64) {
+            io_bail!(
+                "bad {} size: {} (expected {})",
+                what,
+                self.current_header.content_size(),
+                size_of::<T>(),
+            );
+        }
+        (&mut self.input as &mut dyn SeqRead).seq_read_entry().await
+    }
+
+    //
+    // Read functions for PXAR components.
+    //
+
+    async fn read_xattr(&mut self) -> io::Result<format::XAttr> {
+        let data = self.read_entry_as_bytes().await?;
+
+        let name_len = data
+            .iter()
+            .position(|c| *c == 0)
+            .ok_or_else(|| io_format_err!("missing value separator in xattr"))?;
+
+        Ok(format::XAttr { data, name_len })
+    }
+
+    async fn read_symlink(&mut self) -> io::Result<format::Symlink> {
+        let data = self.read_entry_as_bytes().await?;
+        Ok(format::Symlink { data })
+    }
+
+    async fn read_hardlink(&mut self) -> io::Result<format::Hardlink> {
+        let data = self.read_entry_as_bytes().await?;
+        Ok(format::Hardlink { data })
+    }
+
+    async fn read_device(&mut self) -> io::Result<format::Device> {
+        self.read_simple_entry("device").await
+    }
+
+    async fn read_fcaps(&mut self) -> io::Result<format::FCaps> {
+        let data = self.read_entry_as_bytes().await?;
+        Ok(format::FCaps { data })
+    }
+
+    async fn read_acl_user(&mut self) -> io::Result<format::acl::User> {
+        self.read_simple_entry("acl user").await
+    }
+
+    async fn read_acl_group(&mut self) -> io::Result<format::acl::Group> {
+        self.read_simple_entry("acl group").await
+    }
+
+    async fn read_acl_group_object(&mut self) -> io::Result<format::acl::GroupObject> {
+        self.read_simple_entry("acl group object").await
+    }
+
+    async fn read_acl_default(&mut self) -> io::Result<format::acl::Default> {
+        self.read_simple_entry("acl default").await
+    }
+
+    async fn read_quota_project_id(&mut self) -> io::Result<format::QuotaProjectId> {
+        self.read_simple_entry("quota project id").await
+    }
+}

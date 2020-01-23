@@ -1,0 +1,32 @@
+[package]
+name = "pxar"
+version = "0.1.0"
+authors = ["Wolfgang Bumiller <w.bumiller@proxmox.com>"]
+edition = "2018"
+
+[[example]]
+name = "apxar"
+path = "examples/apxar.rs"
+required-features = [ "async-example" ]
+
+[dependencies]
+bitflags = "1.2.1"
+endian_trait = { version = "0.6", features = ["arrays"] }
+failure = "0.1"
+siphasher = "0.3"
+
+futures = { version = "0.3.1", optional = true }
+tokio = { version = "0.2.10", optional = true, default-features = false }
+
+[features]
+default = [ "futures-io", "tokio-io" ]
+futures-io = [ "futures" ]
+tokio-io = [ "tokio" ]
+async-example = [
+    "futures-io",
+    "tokio-io",
+    "tokio/fs",
+    "tokio/rt-threaded",
+    "tokio/io-driver",
+    "tokio/macros",
+]
