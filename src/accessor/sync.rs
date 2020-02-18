@@ -145,6 +145,14 @@ impl<'a> FileEntry<'a> {
     }
 }
 
+impl<'a> std::ops::Deref for FileEntry<'a> {
+    type Target = Entry;
+
+    fn deref(&self) -> &Self::Target {
+        self.entry()
+    }
+}
+
 /// An iterator over the contents of a `Directory`.
 #[repr(transparent)]
 pub struct ReadDir<'a> {
