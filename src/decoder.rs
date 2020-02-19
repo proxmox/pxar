@@ -185,11 +185,7 @@ impl<T: SeqRead> DecoderImpl<T> {
         Self::new_full(input, "/".into()).await
     }
 
-    pub(crate) async fn new_full(mut input: T, path: PathBuf) -> io::Result<Self> {
-        let offset = (&mut input as &mut dyn SeqRead)
-            .position()
-            .await
-            .transpose()?;
+    pub(crate) async fn new_full(input: T, path: PathBuf) -> io::Result<Self> {
         let this = DecoderImpl {
             input,
             current_header: unsafe { mem::zeroed() },
@@ -197,7 +193,6 @@ impl<T: SeqRead> DecoderImpl<T> {
                 path,
                 kind: EntryKind::EndOfDirectory,
                 metadata: Metadata::default(),
-                offset,
             },
             path_lengths: Vec::new(),
             state: State::Begin,
@@ -239,11 +234,6 @@ impl<T: SeqRead> DecoderImpl<T> {
                 format::PXAR_GOODBYE => {
                     if self.with_goodbye_tables {
                         self.entry.kind = EntryKind::EndOfDirectory;
-                        let offset = (&mut self.input as &mut dyn SeqRead)
-                            .position()
-                            .await
-                            .transpose()?;
-                        self.entry.offset = offset;
                         self.state = State::InPayload;
                         return Ok(Some(self.entry.take()));
                     }
@@ -432,8 +422,13 @@ impl<T: SeqRead> DecoderImpl<T> {
                 return Ok(ItemResult::Entry);
             }
             format::PXAR_PAYLOAD => {
+                let offset = (&mut self.input as &mut dyn SeqRead)
+                    .position()
+                    .await
+                    .transpose()?;
                 self.entry.kind = EntryKind::File {
                     size: self.current_header.content_size(),
+                    offset,
                 };
                 self.state = State::InPayload;
                 return Ok(ItemResult::Entry);

@@ -80,7 +80,7 @@ pub enum EntryKind {
     Device(format::Device),
 
     /// Regular file.
-    File { size: u64 },
+    File { size: u64, offset: Option<u64> },
 
     /// Directory entry. When iterating through an archive, the contents follow next.
     Directory,
@@ -97,7 +97,6 @@ pub struct Entry {
     path: PathBuf,
     metadata: Metadata,
     kind: EntryKind,
-    offset: Option<u64>,
 }
 
 /// General accessors.
@@ -106,7 +105,6 @@ impl Entry {
     fn clear_data(&mut self) {
         self.metadata = Metadata::default();
         self.kind = EntryKind::EndOfDirectory;
-        self.offset = None;
     }
 
     fn internal_default() -> Self {
@@ -114,7 +112,6 @@ impl Entry {
             path: PathBuf::default(),
             metadata: Metadata::default(),
             kind: EntryKind::EndOfDirectory,
-            offset: None,
         }
     }
 
@@ -122,13 +119,6 @@ impl Entry {
         let this = mem::replace(self, Self::internal_default());
         self.path = this.path.clone();
         this
-    }
-
-    /// If the underlying I/O implementation supports seeking, this will be filled with the start
-    /// offset of this entry, allowing one to jump back to this entry later on.
-    #[inline]
-    pub fn offset(&self) -> Option<u64> {
-        self.offset
     }
 
     /// Get the full path of this file within the current pxar directory structure.

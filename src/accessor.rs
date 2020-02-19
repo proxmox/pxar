@@ -272,11 +272,10 @@ impl<T: Clone + ReadAt> DirectoryImpl<T> {
     }
 
     async fn lookup_self(&self) -> io::Result<FileEntryImpl<T>> {
-        let (entry, decoder) = self.decode_one_entry(self.entry_range(), None).await?;
+        let (entry, _decoder) = self.decode_one_entry(self.entry_range(), None).await?;
         Ok(FileEntryImpl {
             input: self.input.clone(),
             entry,
-            decoder: Some(decoder),
             end_offset: self.end_offset(),
         })
     }
@@ -400,7 +399,6 @@ impl<T: Clone + ReadAt> DirectoryImpl<T> {
 pub struct FileEntryImpl<T: Clone + ReadAt> {
     input: T,
     entry: Entry,
-    decoder: Option<DecoderImpl<SeqReadAtAdapter<T>>>,
     end_offset: u64,
 }
 
@@ -415,12 +413,14 @@ impl<T: Clone + ReadAt> FileEntryImpl<T> {
     }
 
     pub async fn contents(&self) -> io::Result<FileContentsImpl<T>> {
-        let offset = self
-            .entry
-            .offset
-            .ok_or_else(|| io_format_err!("cannot open file, reader provided no offset"))?;
         match self.entry.kind {
-            EntryKind::File { size } => Ok(FileContentsImpl::new(
+            EntryKind::File { offset: None, .. } => {
+                io_bail!("cannot open file, reader provided no offset")
+            }
+            EntryKind::File {
+                size,
+                offset: Some(offset),
+            } => Ok(FileContentsImpl::new(
                 self.input.clone(),
                 offset..(offset + size),
             )),
@@ -494,16 +494,14 @@ impl<'a, T: Clone + ReadAt> DirEntryImpl<'a, T> {
 
     pub async fn get_entry(&self) -> io::Result<FileEntryImpl<T>> {
         let end_offset = self.entry_range.end;
-        let (entry, decoder) = self
+        let (entry, _decoder) = self
             .dir
             .decode_one_entry(self.entry_range.clone(), Some(&self.file_name))
             .await?;
-        let decoder = if entry.is_dir() { Some(decoder) } else { None };
 
         Ok(FileEntryImpl {
             input: self.dir.input.clone(),
             entry,
-            decoder,
             end_offset,
         })
     }
@@ -538,7 +536,9 @@ impl<T: Clone + ReadAt> FileContentsImpl<T> {
             buf = &mut buf[..(remaining as usize)];
         }
 
-        (&self.input as &dyn ReadAt).read_at(buf, offset).await
+        (&self.input as &dyn ReadAt)
+            .read_at(buf, self.range.start + offset)
+            .await
     }
 }
 
