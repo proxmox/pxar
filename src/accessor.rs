@@ -1,8 +1,8 @@
 //! Random access for PXAR files.
 
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::io;
-use std::mem::{size_of, size_of_val, MaybeUninit};
+use std::mem::{self, size_of, size_of_val, MaybeUninit};
 use std::ops::Range;
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::path::{Path, PathBuf};
@@ -194,6 +194,11 @@ impl<T: Clone + ReadAt> DirectoryImpl<T> {
     }
 
     #[inline]
+    fn entry_range(&self) -> Range<u64> {
+        self.entry_ofs..self.end_offset()
+    }
+
+    #[inline]
     fn table_size(&self) -> u64 {
         (self.end_offset() - self.goodbye_ofs) - (size_of::<format::Header>() as u64)
     }
@@ -227,9 +232,7 @@ impl<T: Clone + ReadAt> DirectoryImpl<T> {
 
     /// Get a decoder for the directory contents.
     pub(crate) async fn decode_full(&self) -> io::Result<DecoderImpl<SeqReadAtAdapter<T>>> {
-        let (dir, decoder) = self
-            .decode_one_entry(self.entry_ofs..(self.entry_ofs + self.size), None)
-            .await?;
+        let (dir, decoder) = self.decode_one_entry(self.entry_range(), None).await?;
         if !dir.is_dir() {
             io_bail!("directory does not seem to be a directory");
         }
@@ -268,9 +271,61 @@ impl<T: Clone + ReadAt> DirectoryImpl<T> {
         format::search_binary_tree_array_by(&self.table, |i| hash.cmp(&i.hash))
     }
 
+    async fn lookup_self(&self) -> io::Result<FileEntryImpl<T>> {
+        let (entry, decoder) = self.decode_one_entry(self.entry_range(), None).await?;
+        Ok(FileEntryImpl {
+            input: self.input.clone(),
+            entry,
+            decoder: Some(decoder),
+            end_offset: self.end_offset(),
+        })
+    }
+
     /// Lookup a directory entry.
     pub async fn lookup(&self, path: &Path) -> io::Result<Option<FileEntryImpl<T>>> {
-        let hash = format::hash_filename(path.as_os_str().as_bytes());
+        let mut cur: Option<FileEntryImpl<T>> = None;
+
+        let mut first = true;
+        for component in path.components() {
+            use std::path::Component;
+
+            let first = mem::replace(&mut first, false);
+
+            let component = match component {
+                Component::Normal(path) => path,
+                Component::ParentDir => io_bail!("cannot enter parent directory in archive"),
+                Component::RootDir | Component::CurDir if first => {
+                    cur = Some(self.lookup_self().await?);
+                    continue;
+                }
+                Component::CurDir => continue,
+                _ => io_bail!("invalid component in path"),
+            };
+
+            let next = match cur {
+                Some(entry) => {
+                    entry
+                        .enter_directory()
+                        .await?
+                        .lookup_component(component)
+                        .await?
+                }
+                None => self.lookup_component(component).await?,
+            };
+
+            if next.is_none() {
+                return Ok(None);
+            }
+
+            cur = next;
+        }
+
+        Ok(cur)
+    }
+
+    /// Lookup a single directory entry component (does not handle multiple components in path)
+    pub async fn lookup_component(&self, path: &OsStr) -> io::Result<Option<FileEntryImpl<T>>> {
+        let hash = format::hash_filename(path.as_bytes());
         let index = match self.lookup_hash_position(hash) {
             Some(index) => index,
             None => return Ok(None),
