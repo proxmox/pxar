@@ -79,6 +79,21 @@ impl<'a> dyn ReadAt + 'a {
     }
 }
 
+/// Allow using trait objects for `T: ReadAt`
+impl<'a> ReadAt for &(dyn ReadAt + 'a) {
+    fn poll_read_at(
+        self: Pin<&Self>,
+        cx: &mut Context,
+        buf: &mut [u8],
+        offset: u64,
+    ) -> Poll<io::Result<usize>> {
+        unsafe {
+            self.map_unchecked(|this| *this)
+                .poll_read_at(cx, buf, offset)
+        }
+    }
+}
+
 /// The random access state machine implementation.
 pub struct AccessorImpl<T> {
     input: T,
@@ -93,14 +108,20 @@ impl<T: ReadAt> AccessorImpl<T> {
         Ok(Self { input, size })
     }
 
-    pub async fn open_root<'a>(&'a self) -> io::Result<DirectoryImpl<'a>> {
-        DirectoryImpl::open_at_end(&self.input, self.size, "/".into()).await
+    pub async fn open_root_ref<'a>(&'a self) -> io::Result<DirectoryImpl<&'a dyn ReadAt>> {
+        DirectoryImpl::open_at_end(&self.input as &dyn ReadAt, self.size, "/".into()).await
+    }
+}
+
+impl<T: Clone + ReadAt> AccessorImpl<T> {
+    pub async fn open_root(&self) -> io::Result<DirectoryImpl<T>> {
+        DirectoryImpl::open_at_end(self.input.clone(), self.size, "/".into()).await
     }
 }
 
 /// The directory random-access state machine implementation.
-pub struct DirectoryImpl<'a> {
-    input: &'a dyn ReadAt,
+pub struct DirectoryImpl<T> {
+    input: T,
     entry_ofs: u64,
     goodbye_ofs: u64,
     size: u64,
@@ -108,14 +129,14 @@ pub struct DirectoryImpl<'a> {
     path: PathBuf,
 }
 
-impl<'a> DirectoryImpl<'a> {
+impl<T: Clone + ReadAt> DirectoryImpl<T> {
     /// Open a directory ending at the specified position.
     pub(crate) async fn open_at_end(
-        input: &'a dyn ReadAt,
+        input: T,
         end_offset: u64,
         path: PathBuf,
-    ) -> io::Result<DirectoryImpl<'a>> {
-        let tail = Self::read_tail_entry(input, end_offset).await?;
+    ) -> io::Result<DirectoryImpl<T>> {
+        let tail = Self::read_tail_entry(&input, end_offset).await?;
 
         if end_offset < tail.size {
             io_bail!("goodbye tail size out of range");
@@ -159,7 +180,9 @@ impl<'a> DirectoryImpl<'a> {
                 data.as_mut_ptr() as *mut u8,
                 len * size_of_val(&data[0]),
             );
-            self.input.read_exact_at(slice, self.table_offset()).await?;
+            (&self.input as &dyn ReadAt)
+                .read_exact_at(slice, self.table_offset())
+                .await?;
             drop(slice);
         }
         Ok(data.into_boxed_slice())
@@ -187,7 +210,7 @@ impl<'a> DirectoryImpl<'a> {
     }
 
     /// Read the goodbye tail and perform some sanity checks.
-    async fn read_tail_entry(input: &'a dyn ReadAt, end_offset: u64) -> io::Result<GoodbyeItem> {
+    async fn read_tail_entry(input: &'_ dyn ReadAt, end_offset: u64) -> io::Result<GoodbyeItem> {
         if end_offset < (size_of::<GoodbyeItem>() as u64) {
             io_bail!("goodbye tail does not fit");
         }
@@ -203,7 +226,7 @@ impl<'a> DirectoryImpl<'a> {
     }
 
     /// Get a decoder for the directory contents.
-    pub(crate) async fn decode_full(&self) -> io::Result<DecoderImpl<SeqReadAtAdapter<'a>>> {
+    pub(crate) async fn decode_full(&self) -> io::Result<DecoderImpl<SeqReadAtAdapter<T>>> {
         let (dir, decoder) = self
             .decode_one_entry(self.entry_ofs..(self.entry_ofs + self.size), None)
             .await?;
@@ -217,9 +240,9 @@ impl<'a> DirectoryImpl<'a> {
         &self,
         entry_range: Range<u64>,
         file_name: Option<&Path>,
-    ) -> io::Result<DecoderImpl<SeqReadAtAdapter<'a>>> {
+    ) -> io::Result<DecoderImpl<SeqReadAtAdapter<T>>> {
         Ok(DecoderImpl::new_full(
-            SeqReadAtAdapter::new(self.input, entry_range),
+            SeqReadAtAdapter::new(self.input.clone(), entry_range),
             match file_name {
                 None => self.path.clone(),
                 Some(file) => self.path.join(file),
@@ -232,7 +255,7 @@ impl<'a> DirectoryImpl<'a> {
         &self,
         entry_range: Range<u64>,
         file_name: Option<&Path>,
-    ) -> io::Result<(Entry, DecoderImpl<SeqReadAtAdapter<'a>>)> {
+    ) -> io::Result<(Entry, DecoderImpl<SeqReadAtAdapter<T>>)> {
         let mut decoder = self.get_decoder(entry_range, file_name).await?;
         let entry = decoder
             .next()
@@ -246,7 +269,7 @@ impl<'a> DirectoryImpl<'a> {
     }
 
     /// Lookup a directory entry.
-    pub async fn lookup(&'a self, path: &Path) -> io::Result<Option<FileEntryImpl<'a>>> {
+    pub async fn lookup(&self, path: &Path) -> io::Result<Option<FileEntryImpl<T>>> {
         let hash = format::hash_filename(path.as_os_str().as_bytes());
         let index = match self.lookup_hash_position(hash) {
             Some(index) => index,
@@ -266,7 +289,7 @@ impl<'a> DirectoryImpl<'a> {
         Ok(None)
     }
 
-    async fn get_cursor(&'a self, index: usize) -> io::Result<DirEntryImpl<'a>> {
+    async fn get_cursor<'a>(&'a self, index: usize) -> io::Result<DirEntryImpl<'a, T>> {
         let entry = &self.table[index];
         let file_goodbye_ofs = entry.offset;
         if self.goodbye_ofs < file_goodbye_ofs {
@@ -287,13 +310,12 @@ impl<'a> DirectoryImpl<'a> {
     }
 
     async fn read_filename_entry(&self, file_ofs: u64) -> io::Result<(PathBuf, u64)> {
-        let head: format::Header = self.input.read_entry_at(file_ofs).await?;
+        let head: format::Header = (&self.input as &dyn ReadAt).read_entry_at(file_ofs).await?;
         if head.htype != format::PXAR_FILENAME {
             io_bail!("expected PXAR_FILENAME header, found: {:x}", head.htype);
         }
 
-        let mut path = self
-            .input
+        let mut path = (&self.input as &dyn ReadAt)
             .read_exact_data_at(
                 head.content_size() as usize,
                 file_ofs + (size_of_val(&head) as u64),
@@ -314,26 +336,26 @@ impl<'a> DirectoryImpl<'a> {
         Ok((file_name, file_ofs + head.full_size()))
     }
 
-    pub fn read_dir(&'a self) -> ReadDirImpl<'a> {
+    pub fn read_dir(&self) -> ReadDirImpl<T> {
         ReadDirImpl::new(self, 0)
     }
 }
 
 /// A file entry retrieved from a Directory.
-pub struct FileEntryImpl<'a> {
-    parent: &'a DirectoryImpl<'a>,
+pub struct FileEntryImpl<T: Clone + ReadAt> {
+    input: T,
     entry: Entry,
-    decoder: Option<DecoderImpl<SeqReadAtAdapter<'a>>>,
+    decoder: Option<DecoderImpl<SeqReadAtAdapter<T>>>,
     end_offset: u64,
 }
 
-impl<'a> FileEntryImpl<'a> {
-    pub async fn enter_directory(&self) -> io::Result<DirectoryImpl<'a>> {
+impl<T: Clone + ReadAt> FileEntryImpl<T> {
+    pub async fn enter_directory(&self) -> io::Result<DirectoryImpl<T>> {
         if !self.entry.is_dir() {
             io_bail!("enter_directory() on a non-directory");
         }
 
-        DirectoryImpl::open_at_end(self.parent.input, self.end_offset, self.entry.path.clone())
+        DirectoryImpl::open_at_end(self.input.clone(), self.end_offset, self.entry.path.clone())
             .await
     }
 
@@ -349,17 +371,17 @@ impl<'a> FileEntryImpl<'a> {
 }
 
 /// An iterator over the contents of a directory.
-pub struct ReadDirImpl<'a> {
-    dir: &'a DirectoryImpl<'a>,
+pub struct ReadDirImpl<'a, T> {
+    dir: &'a DirectoryImpl<T>,
     at: usize,
 }
 
-impl<'a> ReadDirImpl<'a> {
-    pub fn new(dir: &'a DirectoryImpl<'a>, at: usize) -> Self {
+impl<'a, T: Clone + ReadAt> ReadDirImpl<'a, T> {
+    pub fn new(dir: &'a DirectoryImpl<T>, at: usize) -> Self {
         Self { dir, at }
     }
 
-    pub async fn next(&mut self) -> io::Result<Option<DirEntryImpl<'a>>> {
+    pub async fn next(&mut self) -> io::Result<Option<DirEntryImpl<'a, T>>> {
         if self.at == self.dir.table.len() {
             Ok(None)
         } else {
@@ -374,18 +396,18 @@ impl<'a> ReadDirImpl<'a> {
 ///
 /// At this point only the file name has been read and we remembered the position for finding the
 /// actual data. This can be upgraded into a FileEntryImpl.
-pub struct DirEntryImpl<'a> {
-    dir: &'a DirectoryImpl<'a>,
+pub struct DirEntryImpl<'a, T: Clone + ReadAt> {
+    dir: &'a DirectoryImpl<T>,
     file_name: PathBuf,
     entry_range: Range<u64>,
 }
 
-impl<'a> DirEntryImpl<'a> {
+impl<'a, T: Clone + ReadAt> DirEntryImpl<'a, T> {
     pub fn file_name(&self) -> &Path {
         &self.file_name
     }
 
-    pub async fn get_entry(&self) -> io::Result<FileEntryImpl<'a>> {
+    pub async fn get_entry(&self) -> io::Result<FileEntryImpl<T>> {
         let end_offset = self.entry_range.end;
         let (entry, decoder) = self
             .dir
@@ -394,7 +416,7 @@ impl<'a> DirEntryImpl<'a> {
         let decoder = if entry.is_dir() { Some(decoder) } else { None };
 
         Ok(FileEntryImpl {
-            parent: self.dir,
+            input: self.dir.input.clone(),
             entry,
             decoder,
             end_offset,
@@ -403,13 +425,13 @@ impl<'a> DirEntryImpl<'a> {
 }
 
 #[doc(hidden)]
-pub struct SeqReadAtAdapter<'a> {
-    input: &'a dyn ReadAt,
+pub struct SeqReadAtAdapter<T> {
+    input: T,
     range: Range<u64>,
 }
 
-impl<'a> SeqReadAtAdapter<'a> {
-    pub fn new(input: &'a dyn ReadAt, range: Range<u64>) -> Self {
+impl<T: ReadAt> SeqReadAtAdapter<T> {
+    pub fn new(input: T, range: Range<u64>) -> Self {
         Self { input, range }
     }
 
@@ -419,7 +441,7 @@ impl<'a> SeqReadAtAdapter<'a> {
     }
 }
 
-impl<'a> decoder::SeqRead for SeqReadAtAdapter<'a> {
+impl<T: ReadAt> decoder::SeqRead for SeqReadAtAdapter<T> {
     fn poll_seq_read(
         self: Pin<&mut Self>,
         cx: &mut Context,
@@ -428,10 +450,10 @@ impl<'a> decoder::SeqRead for SeqReadAtAdapter<'a> {
         let len = buf.len().min(self.remaining());
         let buf = &mut buf[..len];
 
-        let this = self.get_mut();
+        let this = unsafe { self.get_unchecked_mut() };
 
         let got = ready!(unsafe {
-            Pin::new_unchecked(this.input).poll_read_at(cx, buf, this.range.start)
+            Pin::new_unchecked(&this.input).poll_read_at(cx, buf, this.range.start)
         })?;
         this.range.start += got as u64;
         Poll::Ready(Ok(got))

@@ -24,10 +24,10 @@ pub struct Accessor<T> {
     inner: accessor::AccessorImpl<T>,
 }
 
-impl<T: FileExt> Accessor<T> {
+impl<T: FileExt> Accessor<FileReader<T>> {
     /// Decode a `pxar` archive from a standard file implementing `FileExt`.
     #[inline]
-    pub fn from_file_and_size(input: T, size: u64) -> io::Result<Accessor<FileReader<T>>> {
+    pub fn from_file_and_size(input: T, size: u64) -> io::Result<Self> {
         Accessor::new(FileReader::new(input), size)
     }
 }
@@ -46,6 +46,25 @@ impl Accessor<FileReader<std::fs::File>> {
     }
 }
 
+impl<T: Clone + std::ops::Deref<Target = std::fs::File>> Accessor<FileRefReader<T>> {
+    /// Open an `Arc` or `Rc` of `File`.
+    pub fn from_file_ref(input: T) -> io::Result<Self> {
+        let size = input.deref().metadata()?.len();
+        Accessor::from_file_ref_and_size(input, size)
+    }
+}
+
+impl<T> Accessor<FileRefReader<T>>
+where
+    T: Clone + std::ops::Deref,
+    T::Target: FileExt,
+{
+    /// Open an `Arc` or `Rc` of `File`.
+    pub fn from_file_ref_and_size(input: T, size: u64) -> io::Result<Accessor<FileRefReader<T>>> {
+        Accessor::new(FileRefReader::new(input), size)
+    }
+}
+
 impl<T: ReadAt> Accessor<T> {
     /// Create a *blocking* random-access decoder from an input implementing our internal read
     /// interface.
@@ -59,12 +78,21 @@ impl<T: ReadAt> Accessor<T> {
     }
 
     /// Open a directory handle to the root of the pxar archive.
-    pub fn open_root<'a>(&'a self) -> io::Result<Directory<'a>> {
+    pub fn open_root_ref<'a>(&'a self) -> io::Result<Directory<&'a dyn ReadAt>> {
+        Ok(Directory::new(poll_result_once(
+            self.inner.open_root_ref(),
+        )?))
+    }
+}
+
+impl<T: Clone + ReadAt> Accessor<T> {
+    pub fn open_root(&self) -> io::Result<Directory<T>> {
         Ok(Directory::new(poll_result_once(self.inner.open_root())?))
     }
 }
 
 /// Adapter for FileExt readers.
+#[derive(Clone)]
 pub struct FileReader<T> {
     inner: T,
 }
@@ -86,26 +114,53 @@ impl<T: FileExt> ReadAt for FileReader<T> {
     }
 }
 
-/// Blocking Directory variant:
-#[repr(transparent)]
-pub struct Directory<'a> {
-    inner: accessor::DirectoryImpl<'a>,
+/// Adapter for `Arc` or `Rc` to FileExt readers.
+#[derive(Clone)]
+pub struct FileRefReader<T: Clone> {
+    inner: T,
 }
 
-impl<'a> Directory<'a> {
-    fn new(inner: accessor::DirectoryImpl<'a>) -> Self {
+impl<T: Clone> FileRefReader<T> {
+    pub fn new(inner: T) -> Self {
+        Self { inner }
+    }
+}
+
+impl<T> ReadAt for FileRefReader<T>
+where
+    T: Clone + std::ops::Deref,
+    T::Target: FileExt,
+{
+    fn poll_read_at(
+        self: Pin<&Self>,
+        _cx: &mut Context,
+        buf: &mut [u8],
+        offset: u64,
+    ) -> Poll<io::Result<usize>> {
+        Poll::Ready(self.get_ref().inner.read_at(buf, offset))
+    }
+}
+
+/// Blocking Directory variant:
+#[repr(transparent)]
+pub struct Directory<T> {
+    inner: accessor::DirectoryImpl<T>,
+}
+
+impl<T: Clone + ReadAt> Directory<T> {
+    fn new(inner: accessor::DirectoryImpl<T>) -> Self {
         Self { inner }
     }
 
     /// Get a decoder for the directory contents.
-    pub fn decode_full(&self) -> io::Result<Decoder<accessor::SeqReadAtAdapter<'a>>> {
+    pub fn decode_full(&self) -> io::Result<Decoder<accessor::SeqReadAtAdapter<T>>> {
         Ok(Decoder::from_impl(poll_result_once(
             self.inner.decode_full(),
         )?))
     }
 
     /// Lookup an entry in a directory.
-    pub fn lookup<P: AsRef<Path>>(&'a self, path: P) -> io::Result<Option<FileEntry<'a>>> {
+    pub fn lookup<P: AsRef<Path>>(&self, path: P) -> io::Result<Option<FileEntry<T>>> {
         if let Some(file_entry) = poll_result_once(self.inner.lookup(path.as_ref()))? {
             Ok(Some(FileEntry { inner: file_entry }))
         } else {
@@ -114,7 +169,7 @@ impl<'a> Directory<'a> {
     }
 
     /// Get an iterator over the directory's contents.
-    pub fn read_dir(&'a self) -> ReadDir<'a> {
+    pub fn read_dir<'a>(&'a self) -> ReadDir<'a, T> {
         ReadDir {
             inner: self.inner.read_dir(),
         }
@@ -123,12 +178,12 @@ impl<'a> Directory<'a> {
 
 /// A file entry retrieved from a `Directory` via the `lookup` method.
 #[repr(transparent)]
-pub struct FileEntry<'a> {
-    inner: accessor::FileEntryImpl<'a>,
+pub struct FileEntry<T: Clone + ReadAt> {
+    inner: accessor::FileEntryImpl<T>,
 }
 
-impl<'a> FileEntry<'a> {
-    pub fn enter_directory(&self) -> io::Result<Directory<'a>> {
+impl<T: Clone + ReadAt> FileEntry<T> {
+    pub fn enter_directory(&self) -> io::Result<Directory<T>> {
         Ok(Directory::new(poll_result_once(
             self.inner.enter_directory(),
         )?))
@@ -145,7 +200,7 @@ impl<'a> FileEntry<'a> {
     }
 }
 
-impl<'a> std::ops::Deref for FileEntry<'a> {
+impl<T: Clone + ReadAt> std::ops::Deref for FileEntry<T> {
     type Target = Entry;
 
     fn deref(&self) -> &Self::Target {
@@ -155,12 +210,12 @@ impl<'a> std::ops::Deref for FileEntry<'a> {
 
 /// An iterator over the contents of a `Directory`.
 #[repr(transparent)]
-pub struct ReadDir<'a> {
-    inner: accessor::ReadDirImpl<'a>,
+pub struct ReadDir<'a, T> {
+    inner: accessor::ReadDirImpl<'a, T>,
 }
 
-impl<'a> Iterator for ReadDir<'a> {
-    type Item = io::Result<DirEntry<'a>>;
+impl<'a, T: Clone + ReadAt> Iterator for ReadDir<'a, T> {
+    type Item = io::Result<DirEntry<'a, T>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match poll_result_once(self.inner.next()) {
@@ -171,21 +226,21 @@ impl<'a> Iterator for ReadDir<'a> {
     }
 }
 
-impl<'a> std::iter::FusedIterator for ReadDir<'a> {}
+impl<'a, T: Clone + ReadAt> std::iter::FusedIterator for ReadDir<'a, T> {}
 
 /// A directory entry. When iterating through the contents of a directory we first get access to
 /// the file name. The remaining information can be decoded afterwards.
 #[repr(transparent)]
-pub struct DirEntry<'a> {
-    inner: accessor::DirEntryImpl<'a>,
+pub struct DirEntry<'a, T: Clone + ReadAt> {
+    inner: accessor::DirEntryImpl<'a, T>,
 }
 
-impl<'a> DirEntry<'a> {
+impl<'a, T: Clone + ReadAt> DirEntry<'a, T> {
     pub fn file_name(&self) -> &Path {
         self.inner.file_name()
     }
 
-    pub fn get_entry(&self) -> io::Result<FileEntry<'a>> {
+    pub fn get_entry(&self) -> io::Result<FileEntry<T>> {
         poll_result_once(self.inner.get_entry()).map(|inner| FileEntry { inner })
     }
 }
