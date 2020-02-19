@@ -15,7 +15,7 @@ use crate::decoder::{self, DecoderImpl};
 use crate::format::{self, GoodbyeItem};
 use crate::poll_fn::poll_fn;
 use crate::util;
-use crate::Entry;
+use crate::{Entry, EntryKind};
 
 pub mod aio;
 pub mod sync;
@@ -359,6 +359,20 @@ impl<T: Clone + ReadAt> FileEntryImpl<T> {
             .await
     }
 
+    pub async fn contents(&self) -> io::Result<FileContentsImpl<T>> {
+        let offset = self
+            .entry
+            .offset
+            .ok_or_else(|| io_format_err!("cannot open file, reader provided no offset"))?;
+        match self.entry.kind {
+            EntryKind::File { size } => Ok(FileContentsImpl::new(
+                self.input.clone(),
+                offset..(offset + size),
+            )),
+            _ => io_bail!("not a file"),
+        }
+    }
+
     #[inline]
     pub fn into_entry(self) -> Entry {
         self.entry
@@ -381,6 +395,7 @@ impl<'a, T: Clone + ReadAt> ReadDirImpl<'a, T> {
         Self { dir, at }
     }
 
+    /// Get the next entry.
     pub async fn next(&mut self) -> io::Result<Option<DirEntryImpl<'a, T>>> {
         if self.at == self.dir.table.len() {
             Ok(None)
@@ -389,6 +404,21 @@ impl<'a, T: Clone + ReadAt> ReadDirImpl<'a, T> {
             self.at += 1;
             Ok(Some(cursor))
         }
+    }
+
+    /// Efficient alternative to `Iterator::skip`.
+    #[inline]
+    pub fn skip(self, n: usize) -> Self {
+        Self {
+            at: (self.at + n).min(self.dir.table.len()),
+            dir: self.dir,
+        }
+    }
+
+    /// Efficient alternative to `Iterator::count`.
+    #[inline]
+    pub fn count(self) -> usize {
+        self.dir.table.len()
     }
 }
 
@@ -421,6 +451,39 @@ impl<'a, T: Clone + ReadAt> DirEntryImpl<'a, T> {
             decoder,
             end_offset,
         })
+    }
+}
+
+/// A reader for file contents.
+pub struct FileContentsImpl<T> {
+    input: T,
+
+    /// Absolute offset inside the `input`.
+    range: Range<u64>,
+}
+
+impl<T: Clone + ReadAt> FileContentsImpl<T> {
+    pub fn new(input: T, range: Range<u64>) -> Self {
+        Self { input, range }
+    }
+
+    #[inline]
+    pub fn file_size(&self) -> u64 {
+        self.range.end - self.range.start
+    }
+
+    async fn read_at(&self, mut buf: &mut [u8], offset: u64) -> io::Result<usize> {
+        let size = self.file_size();
+        if offset >= size {
+            return Ok(0);
+        }
+        let remaining = size - offset;
+
+        if remaining < buf.len() as u64 {
+            buf = &mut buf[..(remaining as usize)];
+        }
+
+        (&self.input as &dyn ReadAt).read_at(buf, offset).await
     }
 }
 

@@ -189,6 +189,13 @@ impl<T: Clone + ReadAt> FileEntry<T> {
         )?))
     }
 
+    pub fn contents(&self) -> io::Result<FileContents<T>> {
+        Ok(FileContents {
+            inner: poll_result_once(self.inner.contents())?,
+            at: 0,
+        })
+    }
+
     #[inline]
     pub fn into_entry(self) -> Entry {
         self.inner.into_entry()
@@ -212,6 +219,22 @@ impl<T: Clone + ReadAt> std::ops::Deref for FileEntry<T> {
 #[repr(transparent)]
 pub struct ReadDir<'a, T> {
     inner: accessor::ReadDirImpl<'a, T>,
+}
+
+impl<'a, T: Clone + ReadAt> ReadDir<'a, T> {
+    /// Efficient alternative to `Iterator::skip`.
+    #[inline]
+    pub fn skip(self, n: usize) -> Self {
+        Self {
+            inner: self.inner.skip(n),
+        }
+    }
+
+    /// Efficient alternative to `Iterator::count`.
+    #[inline]
+    pub fn count(self) -> usize {
+        self.inner.count()
+    }
 }
 
 impl<'a, T: Clone + ReadAt> Iterator for ReadDir<'a, T> {
@@ -242,5 +265,40 @@ impl<'a, T: Clone + ReadAt> DirEntry<'a, T> {
 
     pub fn get_entry(&self) -> io::Result<FileEntry<T>> {
         poll_result_once(self.inner.get_entry()).map(|inner| FileEntry { inner })
+    }
+}
+
+/// A reader for file contents.
+pub struct FileContents<T> {
+    inner: accessor::FileContentsImpl<T>,
+    at: u64,
+}
+
+impl<T: Clone + ReadAt> io::Read for FileContents<T> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let got = poll_result_once(self.inner.read_at(buf, self.at))?;
+        self.at += got as u64;
+        Ok(got)
+    }
+}
+
+impl<T: Clone + ReadAt> FileExt for FileContents<T> {
+    fn read_at(&self, buf: &mut [u8], offset: u64) -> io::Result<usize> {
+        poll_result_once(self.inner.read_at(buf, offset))
+    }
+
+    fn write_at(&self, _buf: &[u8], _offset: u64) -> io::Result<usize> {
+        io_bail!("write_at on read-only file");
+    }
+}
+
+impl<T: Clone + ReadAt> ReadAt for FileContents<T> {
+    fn poll_read_at(
+        self: Pin<&Self>,
+        _cx: &mut Context,
+        buf: &mut [u8],
+        offset: u64,
+    ) -> Poll<io::Result<usize>> {
+        Poll::Ready(poll_result_once(self.get_ref().inner.read_at(buf, offset)))
     }
 }
