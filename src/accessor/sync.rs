@@ -141,7 +141,7 @@ where
     }
 }
 
-/// Blocking Directory variant:
+/// A pxar directory entry. This provdies blocking access to the contents of a directory.
 #[repr(transparent)]
 pub struct Directory<T> {
     inner: accessor::DirectoryImpl<T>,
@@ -176,13 +176,15 @@ impl<T: Clone + ReadAt> Directory<T> {
     }
 }
 
-/// A file entry retrieved from a `Directory` via the `lookup` method.
+/// A file entry in a direcotry, retrieved via the `lookup` method or from
+/// `DirEntry::decode_entry``.
 #[repr(transparent)]
 pub struct FileEntry<T: Clone + ReadAt> {
     inner: accessor::FileEntryImpl<T>,
 }
 
 impl<T: Clone + ReadAt> FileEntry<T> {
+    /// Get a handle to the subdirectory this file entry points to, if it is in fact a directory.
     pub fn enter_directory(&self) -> io::Result<Directory<T>> {
         Ok(Directory::new(poll_result_once(
             self.inner.enter_directory(),
@@ -259,12 +261,17 @@ pub struct DirEntry<'a, T: Clone + ReadAt> {
 }
 
 impl<'a, T: Clone + ReadAt> DirEntry<'a, T> {
+    /// Get the current file name.
     pub fn file_name(&self) -> &Path {
         self.inner.file_name()
     }
 
-    pub fn get_entry(&self) -> io::Result<FileEntry<T>> {
-        poll_result_once(self.inner.get_entry()).map(|inner| FileEntry { inner })
+    /// Decode the entry.
+    ///
+    /// When iterating over a directory, the file name is read separately from the file attributes,
+    /// so only the file name is available here, while the attributes still need to be decoded.
+    pub fn decode_entry(&self) -> io::Result<FileEntry<T>> {
+        poll_result_once(self.inner.decode_entry()).map(|inner| FileEntry { inner })
     }
 }
 

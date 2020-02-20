@@ -337,7 +337,7 @@ impl<T: Clone + ReadAt> DirectoryImpl<T> {
         while index < self.table.len() && self.table[index].hash == hash {
             let cursor = self.get_cursor(index).await?;
             if cursor.file_name == path {
-                return Ok(Some(cursor.get_entry().await?));
+                return Ok(Some(cursor.decode_entry().await?));
             }
         }
 
@@ -493,7 +493,7 @@ impl<'a, T: Clone + ReadAt> DirEntryImpl<'a, T> {
         &self.file_name
     }
 
-    async fn get_entry(&self) -> io::Result<FileEntryImpl<T>> {
+    async fn decode_entry(&self) -> io::Result<FileEntryImpl<T>> {
         let end_offset = self.entry_range.end;
         let (entry, _decoder) = self
             .dir
