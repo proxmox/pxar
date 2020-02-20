@@ -146,7 +146,7 @@ impl<'a> dyn SeqRead + 'a {
 ///
 /// We use `async fn` to implement the decoder state machine so that we can easily plug in both
 /// synchronous or `async` I/O objects in as input.
-pub struct DecoderImpl<T> {
+pub(crate) struct DecoderImpl<T> {
     input: T,
     current_header: Header,
     entry: Entry,

@@ -1,6 +1,5 @@
 use std::io::{self, Read, Write};
 use std::os::unix::ffi::OsStrExt;
-use std::sync::Arc;
 
 use failure::{bail, format_err, Error};
 
@@ -23,8 +22,8 @@ fn main() -> Result<(), Error> {
     let file = args
         .next()
         .ok_or_else(|| format_err!("expected a file name"))?;
-    let mut accessor = Accessor::open(file)?;
-    let mut dir = accessor.open_root_ref()?;
+    let accessor = Accessor::open(file)?;
+    let dir = accessor.open_root_ref()?;
 
     let mut buf = Vec::new();
 

@@ -95,7 +95,7 @@ impl<'a> ReadAt for &(dyn ReadAt + 'a) {
 }
 
 /// The random access state machine implementation.
-pub struct AccessorImpl<T> {
+pub(crate) struct AccessorImpl<T> {
     input: T,
     size: u64,
 }
@@ -120,7 +120,7 @@ impl<T: Clone + ReadAt> AccessorImpl<T> {
 }
 
 /// The directory random-access state machine implementation.
-pub struct DirectoryImpl<T> {
+pub(crate) struct DirectoryImpl<T> {
     input: T,
     entry_ofs: u64,
     goodbye_ofs: u64,
@@ -396,7 +396,7 @@ impl<T: Clone + ReadAt> DirectoryImpl<T> {
 }
 
 /// A file entry retrieved from a Directory.
-pub struct FileEntryImpl<T: Clone + ReadAt> {
+pub(crate) struct FileEntryImpl<T: Clone + ReadAt> {
     input: T,
     entry: Entry,
     end_offset: u64,
@@ -440,13 +440,13 @@ impl<T: Clone + ReadAt> FileEntryImpl<T> {
 }
 
 /// An iterator over the contents of a directory.
-pub struct ReadDirImpl<'a, T> {
+pub(crate) struct ReadDirImpl<'a, T> {
     dir: &'a DirectoryImpl<T>,
     at: usize,
 }
 
 impl<'a, T: Clone + ReadAt> ReadDirImpl<'a, T> {
-    pub fn new(dir: &'a DirectoryImpl<T>, at: usize) -> Self {
+    fn new(dir: &'a DirectoryImpl<T>, at: usize) -> Self {
         Self { dir, at }
     }
 
@@ -481,7 +481,7 @@ impl<'a, T: Clone + ReadAt> ReadDirImpl<'a, T> {
 ///
 /// At this point only the file name has been read and we remembered the position for finding the
 /// actual data. This can be upgraded into a FileEntryImpl.
-pub struct DirEntryImpl<'a, T: Clone + ReadAt> {
+pub(crate) struct DirEntryImpl<'a, T: Clone + ReadAt> {
     dir: &'a DirectoryImpl<T>,
     file_name: PathBuf,
     entry_range: Range<u64>,
@@ -492,7 +492,7 @@ impl<'a, T: Clone + ReadAt> DirEntryImpl<'a, T> {
         &self.file_name
     }
 
-    pub async fn get_entry(&self) -> io::Result<FileEntryImpl<T>> {
+    async fn get_entry(&self) -> io::Result<FileEntryImpl<T>> {
         let end_offset = self.entry_range.end;
         let (entry, _decoder) = self
             .dir
@@ -508,7 +508,7 @@ impl<'a, T: Clone + ReadAt> DirEntryImpl<'a, T> {
 }
 
 /// A reader for file contents.
-pub struct FileContentsImpl<T> {
+pub(crate) struct FileContentsImpl<T> {
     input: T,
 
     /// Absolute offset inside the `input`.

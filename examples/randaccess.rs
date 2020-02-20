@@ -9,8 +9,8 @@ fn main() {
     let file = std::fs::File::open(file).expect("failed to open file");
     let file = Arc::new(file);
 
-    let mut accessor = Accessor::from_file_ref(file).expect("failed to open file");
-    let mut dir = accessor
+    let accessor = Accessor::from_file_ref(file).expect("failed to open file");
+    let dir = accessor
         .open_root_ref()
         .expect("failed to open archive root directory");
     for i in dir.decode_full().expect("failed to access root directory") {
