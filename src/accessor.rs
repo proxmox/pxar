@@ -22,7 +22,7 @@ pub mod aio;
 pub mod sync;
 
 #[doc(inline)]
-pub use sync::Accessor;
+pub use sync::{Accessor, Directory, DirEntry, FileEntry, ReadDir};
 
 /// Random access read implementation.
 pub trait ReadAt {
