@@ -85,12 +85,12 @@ impl<'a> SeqRead for &mut (dyn SeqRead + 'a) {
 /// decoder's code, but that's fine.
 impl<'a> dyn SeqRead + 'a {
     /// awaitable version of `poll_position`.
-    async fn position(&mut self) -> Option<io::Result<u64>> {
+    pub async fn position(&mut self) -> Option<io::Result<u64>> {
         poll_fn(|cx| unsafe { Pin::new_unchecked(&mut *self).poll_position(cx) }).await
     }
 
     /// awaitable version of `poll_seq_read`.
-    async fn seq_read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+    pub async fn seq_read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         poll_fn(|cx| unsafe { Pin::new_unchecked(&mut *self).poll_seq_read(cx, buf) }).await
     }
 

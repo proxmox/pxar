@@ -354,13 +354,25 @@ impl<T: Clone + ReadAt> DirectoryImpl<T> {
         let file_ofs = self.goodbye_ofs - file_goodbye_ofs;
         let (file_name, entry_ofs) = self.read_filename_entry(file_ofs).await?;
 
+        let entry_range = Range {
+            start: entry_ofs,
+            end: file_ofs + entry.size,
+        };
+        if entry_range.end < entry_range.start {
+            io_bail!(
+                "bad file: invalid entry ranges for {:?}: \
+                 start=0x{:x}, file_ofs=0x{:x}, size=0x{:x}",
+                file_name,
+                entry_ofs,
+                file_ofs,
+                entry.size,
+            );
+        }
+
         Ok(DirEntryImpl {
             dir: self,
             file_name,
-            entry_range: Range {
-                start: entry_ofs,
-                end: file_ofs + entry.size,
-            },
+            entry_range,
         })
     }
 
@@ -551,6 +563,9 @@ pub struct SeqReadAtAdapter<T> {
 
 impl<T: ReadAt> SeqReadAtAdapter<T> {
     pub fn new(input: T, range: Range<u64>) -> Self {
+        if range.end < range.start {
+            panic!("BAD SEQ READ AT ADAPTER");
+        }
         Self { input, range }
     }
 

@@ -15,6 +15,28 @@ use siphasher::sip::SipHasher24;
 
 pub mod acl;
 
+/// While these constants correspond to `libc::S_` constants, we need these to be fixed for the
+/// format itself, so we redefine them here.
+///
+/// Additionally this gets rid of a bunch of casts between u32 and u64.
+///
+/// You can usually find the values for these in `/usr/include/linux/stat.h`.
+#[rustfmt::skip]
+pub mod mode {
+    pub const IFMT   : u64 = 0o0170000;
+
+    pub const IFSOCK : u64 = 0o0140000;
+    pub const IFLNK  : u64 = 0o0120000;
+    pub const IFREG  : u64 = 0o0100000;
+    pub const IFBLK  : u64 = 0o0060000;
+    pub const IFDIR  : u64 = 0o0040000;
+    pub const IFCHR  : u64 = 0o0020000;
+    pub const IFIFO  : u64 = 0o0010000;
+    pub const ISUID  : u64 = 0o0004000;
+    pub const ISGID  : u64 = 0o0002000;
+    pub const ISVTX  : u64 = 0o0001000;
+}
+
 pub const PXAR_ENTRY: u64 = 0x1396fabcea5bbb51;
 pub const PXAR_FILENAME: u64 = 0x6dbb6ebcb3161f0b;
 pub const PXAR_SYMLINK: u64 = 0x664a6fb6830e0d6c;
@@ -50,6 +72,16 @@ pub struct Header {
 
 impl Header {
     #[inline]
+    pub fn with_full_size(htype: u64, full_size: u64) -> Self {
+        Self { htype, full_size }
+    }
+
+    #[inline]
+    pub fn with_content_size(htype: u64, content_size: u64) -> Self {
+        Self::with_full_size(htype, content_size + size_of::<Header>() as u64)
+    }
+
+    #[inline]
     pub fn full_size(&self) -> u64 {
         self.full_size
     }
@@ -68,6 +100,111 @@ pub struct Entry {
     pub uid: u32,
     pub gid: u32,
     pub mtime: u64,
+}
+
+/// Builder pattern methods.
+impl Entry {
+    pub const fn mode(self, mode: u64) -> Self {
+        Self { mode, ..self }
+    }
+
+    pub const fn flags(self, flags: u64) -> Self {
+        Self { flags, ..self }
+    }
+
+    pub const fn uid(self, uid: u32) -> Self {
+        Self { uid, ..self }
+    }
+
+    pub const fn gid(self, gid: u32) -> Self {
+        Self { gid, ..self }
+    }
+
+    pub const fn mtime(self, mtime: u64) -> Self {
+        Self { mtime, ..self }
+    }
+
+    pub const fn set_dir(self) -> Self {
+        let mode = self.mode;
+        self.mode((mode & !mode::IFMT) | mode::IFDIR)
+    }
+
+    pub const fn set_regular_file(self) -> Self {
+        let mode = self.mode;
+        self.mode((mode & !mode::IFMT) | mode::IFREG)
+    }
+
+    pub const fn set_symlink(self) -> Self {
+        let mode = self.mode;
+        self.mode((mode & !mode::IFMT) | mode::IFLNK)
+    }
+
+    pub const fn set_blockdev(self) -> Self {
+        let mode = self.mode;
+        self.mode((mode & !mode::IFMT) | mode::IFBLK)
+    }
+
+    pub const fn set_chardev(self) -> Self {
+        let mode = self.mode;
+        self.mode((mode & !mode::IFMT) | mode::IFCHR)
+    }
+
+    pub const fn set_fifo(self) -> Self {
+        let mode = self.mode;
+        self.mode((mode & !mode::IFMT) | mode::IFIFO)
+    }
+}
+
+/// Convenience methods.
+impl Entry {
+    /// Check whether this is a directory.
+    pub fn is_dir(&self) -> bool {
+        (self.mode & mode::IFMT) == mode::IFDIR
+    }
+
+    /// Check whether this is a symbolic link.
+    pub fn is_symlink(&self) -> bool {
+        (self.mode & mode::IFMT) == mode::IFLNK
+    }
+
+    /// Check whether this is a device node.
+    pub fn is_device(&self) -> bool {
+        let fmt = self.mode & mode::IFMT;
+        fmt == mode::IFCHR || fmt == mode::IFBLK
+    }
+
+    /// Check whether this is a regular file.
+    pub fn is_regular_file(&self) -> bool {
+        (self.mode & mode::IFMT) == mode::IFREG
+    }
+}
+
+impl From<&std::fs::Metadata> for Entry {
+    fn from(meta: &std::fs::Metadata) -> Entry {
+        #[cfg(unix)]
+        use std::os::unix::fs::MetadataExt;
+
+        let this = Entry::default();
+
+        #[cfg(unix)]
+        let this = this
+            .uid(meta.uid())
+            .gid(meta.gid())
+            .mode(meta.mode() as u64)
+            .mtime(meta.mtime() as u64);
+
+        let file_type = meta.file_type();
+        let mode = this.mode;
+        let this = if file_type.is_dir() {
+            this.mode(mode | mode::IFDIR)
+        } else if file_type.is_symlink() {
+            this.mode(mode | mode::IFLNK)
+        } else {
+            this.mode(mode | mode::IFREG)
+        };
+
+        this
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -152,7 +289,7 @@ pub struct QuotaProjectId {
     pub projid: u64,
 }
 
-#[derive(Debug, Endian)]
+#[derive(Clone, Debug, Endian)]
 #[repr(C)]
 pub struct GoodbyeItem {
     /// SipHash24 of the directory item name. The last GOODBYE item uses the special hash value

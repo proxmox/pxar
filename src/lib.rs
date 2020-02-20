@@ -18,6 +18,11 @@ mod poll_fn;
 
 pub mod accessor;
 pub mod decoder;
+pub mod encoder;
+
+/// Reexport of `format::Entry`. Since this conveys mostly information found via the `stat` syscall
+/// we mostly use this name for public interfaces.
+pub use format::Entry as Stat;
 
 /// File metadata found in pxar archives.
 ///
@@ -26,7 +31,7 @@ pub mod decoder;
 #[derive(Clone, Debug, Default)]
 pub struct Metadata {
     /// Data typically found in a `stat()` call.
-    pub stat: format::Entry,
+    pub stat: Stat,
 
     /// Extended attributes.
     pub xattrs: Vec<format::XAttr>,
@@ -39,6 +44,52 @@ pub struct Metadata {
 
     /// Quota project id.
     pub quota_project_id: Option<format::QuotaProjectId>,
+}
+
+impl From<Stat> for Metadata {
+    fn from(stat: Stat) -> Self {
+        Self {
+            stat,
+            ..Default::default()
+        }
+    }
+}
+
+impl From<std::fs::Metadata> for Metadata {
+    fn from(meta: std::fs::Metadata) -> Metadata {
+        let this = Self::from(Stat::from(&meta));
+
+        // FIXME: fill the remaining metadata
+
+        this
+    }
+}
+
+/// Convenience helpers.
+impl Metadata {
+    /// Check whether this is a directory.
+    #[inline]
+    pub fn is_dir(&self) -> bool {
+        self.stat.is_dir()
+    }
+
+    /// Check whether this is a symbolic link.
+    #[inline]
+    pub fn is_symlink(&self) -> bool {
+        self.stat.is_symlink()
+    }
+
+    /// Check whether this is a device node.
+    #[inline]
+    pub fn is_device(&self) -> bool {
+        self.stat.is_device()
+    }
+
+    /// Check whether this is a regular file.
+    #[inline]
+    pub fn is_regular_file(&self) -> bool {
+        self.stat.is_regular_file()
+    }
 }
 
 /// ACL entries of a pxar archive.
