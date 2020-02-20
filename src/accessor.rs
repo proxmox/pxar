@@ -17,6 +17,7 @@ use crate::poll_fn::poll_fn;
 use crate::util;
 use crate::{Entry, EntryKind};
 
+#[doc(hidden)]
 pub mod aio;
 pub mod sync;
 
