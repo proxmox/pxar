@@ -22,7 +22,7 @@ pub mod aio;
 pub mod sync;
 
 #[doc(inline)]
-pub use sync::{Accessor, Directory, DirEntry, FileEntry, ReadDir};
+pub use sync::{Accessor, DirEntry, Directory, FileEntry, ReadDir};
 
 /// Random access read implementation.
 pub trait ReadAt {
@@ -179,7 +179,7 @@ impl<T: Clone + ReadAt> DirectoryImpl<T> {
             data.set_len(len);
             let slice = std::slice::from_raw_parts_mut(
                 data.as_mut_ptr() as *mut u8,
-                len * size_of_val(&data[0]),
+                len * size_of::<GoodbyeItem>(),
             );
             (&self.input as &dyn ReadAt)
                 .read_exact_at(slice, self.table_offset())
