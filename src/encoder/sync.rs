@@ -58,12 +58,15 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
     /// Create a new regular file to the archive. This returns a `File` object to which the
     /// contents have to be written out completely. Failing to do so will put the encoder into an
     /// error state.
-    pub fn create_file<P: AsRef<Path>>(
-        &'a mut self,
+    pub fn create_file<'b, P: AsRef<Path>>(
+        &'b mut self,
         metadata: &Metadata,
         file_name: P,
         file_size: u64,
-    ) -> io::Result<File<'a>> {
+    ) -> io::Result<File<'b>>
+    where
+        'a: 'b,
+    {
         Ok(File {
             inner: poll_result_once(self.inner.create_file(
                 metadata,
@@ -91,11 +94,14 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
 
     /// Create a new subdirectory. Note that the subdirectory has to be finished by calling the
     /// `finish()` method, otherwise the entire archive will be in an error state.
-    pub fn create_directory<P: AsRef<Path>>(
-        &'a mut self,
+    pub fn create_directory<'b, P: AsRef<Path>>(
+        &'b mut self,
         file_name: P,
         metadata: &Metadata,
-    ) -> io::Result<Encoder<'a, &'a mut dyn SeqWrite>> {
+    ) -> io::Result<Encoder<'b, &'b mut dyn SeqWrite>>
+    where
+        'a: 'b,
+    {
         Ok(Encoder {
             inner: poll_result_once(self.inner.create_directory(file_name.as_ref(), metadata))?,
         })
