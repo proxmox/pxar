@@ -11,6 +11,7 @@ use std::task::{Context, Poll};
 
 use endian_trait::Endian;
 
+use crate::binary_tree_array;
 use crate::decoder::{self, DecoderImpl};
 use crate::format::{self, GoodbyeItem};
 use crate::poll_fn::poll_fn;
@@ -268,8 +269,8 @@ impl<T: Clone + ReadAt> DirectoryImpl<T> {
         Ok((entry, decoder))
     }
 
-    fn lookup_hash_position(&self, hash: u64) -> Option<usize> {
-        format::search_binary_tree_array_by(&self.table, |i| hash.cmp(&i.hash))
+    fn lookup_hash_position(&self, hash: u64, start: usize, skip: usize) -> Option<usize> {
+        binary_tree_array::search_by(&self.table, start, skip, |i| hash.cmp(&i.hash))
     }
 
     async fn lookup_self(&self) -> io::Result<FileEntryImpl<T>> {
@@ -326,22 +327,29 @@ impl<T: Clone + ReadAt> DirectoryImpl<T> {
     /// Lookup a single directory entry component (does not handle multiple components in path)
     pub async fn lookup_component(&self, path: &OsStr) -> io::Result<Option<FileEntryImpl<T>>> {
         let hash = format::hash_filename(path.as_bytes());
-        let index = match self.lookup_hash_position(hash) {
+        let first_index = match self.lookup_hash_position(hash, 0, 0) {
             Some(index) => index,
             None => return Ok(None),
         };
 
-        // Lookup FILENAME, if it doesn't match increase index, once found, use the GoodbyeItem's
-        // offset+size as well as the file's Entry to return a DirEntry::Dir or Dir::Entry.
+        // Lookup FILENAME, if the hash matches but the filename doesn't, check for a duplicate
+        // hash once found, use the GoodbyeItem's offset+size as well as the file's Entry to return
+        // a DirEntry::Dir or Dir::Entry.
+        //
+        let mut dup = 0;
+        loop {
+            let index = match self.lookup_hash_position(hash, first_index, dup) {
+                Some(index) => index,
+                None => return Ok(None),
+            };
 
-        while index < self.table.len() && self.table[index].hash == hash {
             let cursor = self.get_cursor(index).await?;
             if cursor.file_name == path {
                 return Ok(Some(cursor.decode_entry().await?));
             }
-        }
 
-        Ok(None)
+            dup += 1;
+        }
     }
 
     async fn get_cursor<'a>(&'a self, index: usize) -> io::Result<DirEntryImpl<'a, T>> {
