@@ -11,6 +11,7 @@ use std::task::{Context, Poll};
 
 use endian_trait::Endian;
 
+use crate::binary_tree_array;
 use crate::decoder::SeqRead;
 use crate::format::{self, GoodbyeItem};
 use crate::poll_fn::poll_fn;
@@ -159,6 +160,9 @@ struct EncoderState {
 
     /// If this is a subdirectory, this points to the this directory's FILENAME.
     file_offset: Option<u64>,
+
+    /// If this is a subdirectory, this contains this directory's hash for the goodbye item.
+    file_hash: u64,
 }
 
 /// The encoder state machine implementation for a directory.
@@ -307,6 +311,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         }
 
         let file_name = file_name.as_os_str().as_bytes();
+        let file_hash = format::hash_filename(file_name);
 
         let file_offset = self.position().await?;
         self.encode_filename(file_name).await?;
@@ -322,6 +327,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
                 entry_offset,
                 files_offset,
                 file_offset: Some(file_offset),
+                file_hash: file_hash,
                 ..Default::default()
             },
             parent: Some(&mut self.state),
@@ -354,6 +360,20 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         (&mut self.output as &mut dyn SeqWrite)
             .seq_write_pxar_entry(format::PXAR_GOODBYE, &tail_bytes)
             .await?;
+        if let Some(parent) = &mut self.parent {
+            let file_offset = self
+                .state
+                .file_offset
+                .expect("internal error: parent set but no file_offset?");
+
+            let end_offset = (&mut self.output as &mut dyn SeqWrite).position().await?;
+
+            parent.items.push(GoodbyeItem {
+                hash: self.state.file_hash,
+                offset: file_offset,
+                size: end_offset - file_offset,
+            });
+        }
         self.finished = true;
         Ok(())
     }
@@ -366,24 +386,37 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         let tail_size = (tail.len() + 1) * size_of::<GoodbyeItem>();
         let goodbye_size = tail_size as u64 + size_of::<format::Header>() as u64;
 
-        tail.reserve_exact(1);
-        tail.push(GoodbyeItem {
-            hash: format::PXAR_GOODBYE_TAIL_MARKER,
-            offset: self.state.entry_offset,
-            size: goodbye_size,
-        });
+        // sort, then create a BST
+        tail.sort_unstable_by(|a, b| a.hash.cmp(&b.hash));
 
-        // fixup the goodbye table offsets to be relative and with the right endianess
-        for item in &mut tail {
-            item.offset = goodbye_offset - item.offset;
-            *item = item.clone().to_le();
+        let mut bst = Vec::with_capacity(tail.len() + 1);
+        unsafe {
+            bst.set_len(tail.len());
         }
+        binary_tree_array::copy(tail.len(), |src, dest| {
+            let mut item = tail[src].clone();
+            // fixup the goodbye table offsets to be relative and with the right endianess
+            item.offset = goodbye_offset - item.offset;
+            unsafe {
+                std::ptr::write(&mut bst[dest], item.to_le());
+            }
+        });
+        drop(tail);
+
+        bst.push(
+            GoodbyeItem {
+                hash: format::PXAR_GOODBYE_TAIL_MARKER,
+                offset: goodbye_offset - self.state.entry_offset,
+                size: goodbye_size,
+            }
+            .to_le(),
+        );
 
         // turn this into a byte vector since after endian-swapping we can no longer guarantee that
         // the items make sense:
-        let data = tail.as_mut_ptr() as *mut u8;
-        let capacity = tail.capacity() * size_of::<GoodbyeItem>();
-        forget(tail);
+        let data = bst.as_mut_ptr() as *mut u8;
+        let capacity = bst.capacity() * size_of::<GoodbyeItem>();
+        forget(bst);
         Ok(unsafe { Vec::from_raw_parts(data, tail_size, capacity) })
     }
 }
