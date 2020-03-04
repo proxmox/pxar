@@ -7,7 +7,7 @@ use std::path::Path;
 use failure::{bail, format_err, Error};
 
 use pxar::accessor::Accessor;
-use pxar::encoder::Encoder;
+use pxar::encoder::{Encoder, SeqWrite};
 use pxar::{Metadata, Stat};
 
 fn main() -> Result<(), Error> {
@@ -64,21 +64,20 @@ fn cmd_create(mut args: std::env::ArgsOs) -> Result<(), Error> {
         .next()
         .ok_or_else(|| format_err!("expected a file name"))?;
 
-    let mut encoder = Encoder::create(
-        file,
-        &Stat::default()
-            .mode(0o644)
-            .set_dir()
-            .uid(1000)
-            .gid(1000)
-            .into(),
-    )?;
+    let dir_path = args
+        .next()
+        .ok_or_else(|| format_err!("expected a directory"))?;
 
-    for path in args {
-        let (mut file, file_size, meta) = open_file(&path)?;
-        encoder.add_file(&meta, &path, file_size, &mut file)?;
+    if args.next().is_some() {
+        bail!("too many parameters, there can only be a single root directory in a pxar archive");
     }
 
+    // we use "simple" directory traversal without `openat()`
+    let meta = Metadata::from(std::fs::metadata(&dir_path)?);
+    let dir = std::fs::read_dir(dir_path)?;
+
+    let mut encoder = Encoder::create(file, &meta)?;
+    add_directory(&mut encoder, dir)?;
     encoder.finish();
 
     Ok(())
@@ -89,4 +88,40 @@ fn open_file<P: AsRef<Path>>(path: P) -> io::Result<(File, u64, Metadata)> {
     let meta = file.metadata()?;
     let file_size = meta.len();
     Ok((file, file_size, meta.into()))
+}
+
+fn add_directory<'a, T: SeqWrite + 'a>(
+    encoder: &mut Encoder<T>,
+    dir: std::fs::ReadDir,
+) -> Result<(), Error> {
+    for file in dir {
+        let file = file?;
+        let file_name = file.file_name();
+        if file_name == "." || file_name == ".." {
+            continue;
+        }
+
+        println!("{:?}", file.path());
+
+        let file_type = file.file_type()?;
+        let file_meta = file.metadata()?;
+        let meta = Metadata::from(&file_meta);
+        if file_type.is_dir() {
+            let mut dir = encoder.create_directory(file_name, &meta)?;
+            add_directory(&mut dir, std::fs::read_dir(file.path())?)?;
+            dir.finish();
+        } else if file_type.is_symlink() {
+            todo!("symlink handling");
+        } else if file_type.is_file() {
+            encoder.add_file(
+                &meta,
+                file_name,
+                file_meta.len(),
+                &mut File::open(file.path())?,
+            )?;
+        } else {
+            todo!("special file handling");
+        }
+    }
+    Ok(())
 }
