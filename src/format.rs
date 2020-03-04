@@ -322,36 +322,6 @@ pub fn hash_filename(name: &[u8]) -> u64 {
     hasher.finish()
 }
 
-/*
-pub fn search_binary_tree_array<F, T>(table: &[T], key: &T) -> Option<usize>
-where
-    T: Ord,
-    F: FnMut(&T) -> std::cmp::Ordering,
-{
-    search_binary_tree_array_by(table, |elem| key.cmp(elem))
-}
-*/
-
-pub fn search_binary_tree_array_by<F, T>(table: &[T], mut f: F) -> Option<usize>
-where
-    F: FnMut(&T) -> Ordering,
-{
-    let mut i = 0;
-
-    while !table.is_empty() {
-        match f(&table[i]) {
-            Ordering::Equal => return Some(i),
-            Ordering::Less => i = 2 * i + 1,
-            Ordering::Greater => i = 2 * i + 2,
-        }
-        if i >= table.len() {
-            break;
-        }
-    }
-
-    None
-}
-
 pub fn path_is_legal_component(path: &Path) -> bool {
     let mut components = path.components();
     match components.next() {
