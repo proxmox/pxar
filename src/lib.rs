@@ -56,13 +56,19 @@ impl From<Stat> for Metadata {
     }
 }
 
-impl From<std::fs::Metadata> for Metadata {
-    fn from(meta: std::fs::Metadata) -> Metadata {
-        let this = Self::from(Stat::from(&meta));
+impl From<&std::fs::Metadata> for Metadata {
+    fn from(meta: &std::fs::Metadata) -> Metadata {
+        let this = Self::from(Stat::from(meta));
 
         // FIXME: fill the remaining metadata
 
         this
+    }
+}
+
+impl From<std::fs::Metadata> for Metadata {
+    fn from(meta: std::fs::Metadata) -> Metadata {
+        Self::from(&meta)
     }
 }
 
