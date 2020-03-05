@@ -3,6 +3,9 @@ name = "pxar"
 version = "0.1.0"
 authors = ["Wolfgang Bumiller <w.bumiller@proxmox.com>"]
 edition = "2018"
+exclude = [
+    "testdir",
+]
 
 [[example]]
 name = "apxar"
