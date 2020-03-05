@@ -330,16 +330,43 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         target: &Path,
         htype: u64,
     ) -> io::Result<()> {
+        self.add_file_entry(metadata, file_name, htype, target.as_os_str().as_bytes())
+            .await
+    }
+
+    pub async fn add_device(
+        &mut self,
+        metadata: &Metadata,
+        file_name: &Path,
+        device: format::Device,
+    ) -> io::Result<()> {
+        let device = device.to_le();
+        let device = unsafe {
+            std::slice::from_raw_parts(
+                &device as *const format::Device as *const u8,
+                size_of::<format::Device>(),
+            )
+        };
+        self.add_file_entry(metadata, file_name, format::PXAR_DEVICE, device)
+            .await
+    }
+
+    async fn add_file_entry(
+        &mut self,
+        metadata: &Metadata,
+        file_name: &Path,
+        htype: u64,
+        entry_data: &[u8],
+    ) -> io::Result<()> {
         self.check();
 
         let file_offset = (&mut self.output as &mut dyn SeqWrite).position().await?;
 
         let file_name = file_name.as_os_str().as_bytes();
-        let target = target.as_os_str().as_bytes();
 
         self.start_file_do(metadata, file_name).await?;
         (&mut self.output as &mut dyn SeqWrite)
-            .seq_write_pxar_entry_zero(htype, target)
+            .seq_write_pxar_entry_zero(htype, entry_data)
             .await?;
 
         let end_offset = (&mut self.output as &mut dyn SeqWrite).position().await?;
