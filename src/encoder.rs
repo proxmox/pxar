@@ -83,6 +83,10 @@ impl PxarStruct for format::Entry {
     const HTYPE: u64 = format::PXAR_ENTRY;
 }
 
+impl PxarStruct for format::QuotaProjectId {
+    const HTYPE: u64 = format::PXAR_QUOTA_PROJID;
+}
+
 impl<'a> dyn SeqWrite + 'a {
     /// awaitable version of `poll_position`.
     async fn position(&mut self) -> io::Result<u64> {
@@ -132,12 +136,21 @@ impl<'a> dyn SeqWrite + 'a {
     }
 
     /// Write a pxar entry consiting of an endian-swappable struct.
-    async fn seq_write_pxar_struct<E: PxarStruct>(&mut self, data: E) -> io::Result<()> {
+    async fn seq_write_pxar_struct_entry<E: Endian>(
+        &mut self,
+        htype: u64,
+        data: E,
+    ) -> io::Result<()> {
         let data = data.to_le();
-        self.seq_write_pxar_entry(E::HTYPE, unsafe {
+        self.seq_write_pxar_entry(htype, unsafe {
             std::slice::from_raw_parts(&data as *const E as *const u8, size_of_val(&data))
         })
         .await
+    }
+
+    /// Write a pxar entry consiting of an endian-swappable struct.
+    async fn seq_write_pxar_struct<E: PxarStruct>(&mut self, data: E) -> io::Result<()> {
+        self.seq_write_pxar_struct_entry(E::HTYPE, data).await
     }
 }
 
@@ -345,8 +358,83 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         (&mut self.output as &mut dyn SeqWrite)
             .seq_write_pxar_struct(metadata.stat.clone())
             .await?;
-        eprintln!("FIXME: encode_metadata() rest!");
+
+        for xattr in &metadata.xattrs {
+            self.write_xattr(xattr).await?;
+        }
+
+        self.write_acls(&metadata.acl).await?;
+
+        if let Some(fcaps) = &metadata.fcaps {
+            self.write_file_capabilities(fcaps).await?;
+        }
+
+        if let Some(qpid) = &metadata.quota_project_id {
+            self.write_quota_project_id(qpid).await?;
+        }
+
         Ok(())
+    }
+
+    async fn write_xattr(&mut self, xattr: &format::XAttr) -> io::Result<()> {
+        (&mut self.output as &mut dyn SeqWrite)
+            .seq_write_pxar_entry(format::PXAR_XATTR, &xattr.data)
+            .await
+    }
+
+    async fn write_acls(&mut self, acl: &crate::Acl) -> io::Result<()> {
+        for acl in &acl.users {
+            (&mut self.output as &mut dyn SeqWrite)
+                .seq_write_pxar_struct_entry(format::PXAR_ACL_USER, acl.clone())
+                .await?;
+        }
+
+        for acl in &acl.groups {
+            (&mut self.output as &mut dyn SeqWrite)
+                .seq_write_pxar_struct_entry(format::PXAR_ACL_GROUP, acl.clone())
+                .await?;
+        }
+
+        if let Some(acl) = &acl.group_obj {
+            (&mut self.output as &mut dyn SeqWrite)
+                .seq_write_pxar_struct_entry(format::PXAR_ACL_GROUP_OBJ, acl.clone())
+                .await?;
+        }
+
+        if let Some(acl) = &acl.default {
+            (&mut self.output as &mut dyn SeqWrite)
+                .seq_write_pxar_struct_entry(format::PXAR_ACL_DEFAULT, acl.clone())
+                .await?;
+        }
+
+        for acl in &acl.default_users {
+            (&mut self.output as &mut dyn SeqWrite)
+                .seq_write_pxar_struct_entry(format::PXAR_ACL_DEFAULT_USER, acl.clone())
+                .await?;
+        }
+
+        for acl in &acl.default_groups {
+            (&mut self.output as &mut dyn SeqWrite)
+                .seq_write_pxar_struct_entry(format::PXAR_ACL_DEFAULT_GROUP, acl.clone())
+                .await?;
+        }
+
+        Ok(())
+    }
+
+    async fn write_file_capabilities(&mut self, fcaps: &format::FCaps) -> io::Result<()> {
+        (&mut self.output as &mut dyn SeqWrite)
+            .seq_write_pxar_entry(format::PXAR_FCAPS, &fcaps.data)
+            .await
+    }
+
+    async fn write_quota_project_id(
+        &mut self,
+        quota_project_id: &format::QuotaProjectId,
+    ) -> io::Result<()> {
+        (&mut self.output as &mut dyn SeqWrite)
+            .seq_write_pxar_struct(quota_project_id.clone())
+            .await
     }
 
     async fn encode_filename(&mut self, file_name: &[u8]) -> io::Result<()> {
