@@ -309,6 +309,27 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         file_name: &Path,
         target: &Path,
     ) -> io::Result<()> {
+        self.add_link(metadata, file_name, target, format::PXAR_SYMLINK)
+            .await
+    }
+
+    pub async fn add_hardlink(
+        &mut self,
+        metadata: &Metadata,
+        file_name: &Path,
+        target: &Path,
+    ) -> io::Result<()> {
+        self.add_link(metadata, file_name, target, format::PXAR_HARDLINK)
+            .await
+    }
+
+    async fn add_link(
+        &mut self,
+        metadata: &Metadata,
+        file_name: &Path,
+        target: &Path,
+        htype: u64,
+    ) -> io::Result<()> {
         self.check();
 
         let file_offset = (&mut self.output as &mut dyn SeqWrite).position().await?;
@@ -318,7 +339,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
 
         self.start_file_do(metadata, file_name).await?;
         (&mut self.output as &mut dyn SeqWrite)
-            .seq_write_pxar_entry_zero(format::PXAR_SYMLINK, target)
+            .seq_write_pxar_entry_zero(htype, target)
             .await?;
 
         let end_offset = (&mut self.output as &mut dyn SeqWrite).position().await?;
