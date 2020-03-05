@@ -303,6 +303,35 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         Ok(())
     }
 
+    pub async fn add_symlink(
+        &mut self,
+        metadata: &Metadata,
+        file_name: &Path,
+        target: &Path,
+    ) -> io::Result<()> {
+        self.check();
+
+        let file_offset = (&mut self.output as &mut dyn SeqWrite).position().await?;
+
+        let file_name = file_name.as_os_str().as_bytes();
+        let target = target.as_os_str().as_bytes();
+
+        self.start_file_do(metadata, file_name).await?;
+        (&mut self.output as &mut dyn SeqWrite)
+            .seq_write_pxar_entry_zero(format::PXAR_SYMLINK, target)
+            .await?;
+
+        let end_offset = (&mut self.output as &mut dyn SeqWrite).position().await?;
+
+        self.state.items.push(GoodbyeItem {
+            hash: format::hash_filename(file_name),
+            offset: file_offset,
+            size: end_offset - file_offset,
+        });
+
+        Ok(())
+    }
+
     /// Helper
     #[inline]
     async fn position(&mut self) -> io::Result<u64> {

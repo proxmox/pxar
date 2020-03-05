@@ -25,6 +25,7 @@ tokio = { version = "0.2.10", optional = true, default-features = false }
 default = [ "futures-io", "tokio-io" ]
 futures-io = [ "futures" ]
 tokio-io = [ "tokio" ]
+
 async-example = [
     "failure",
     "futures-io",
