@@ -45,7 +45,7 @@ impl<'a> Encoder<'a, StandardWriter<std::fs::File>> {
 }
 
 impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
-    /// Create a *blocking* encoder from an output implementing our internal write interface.
+    /// Create a *blocking* encoder for an output implementing our internal write interface.
     ///
     /// Note that the `output`'s `SeqWrite` implementation must always return `Poll::Ready` and is
     /// not allowed to use the `Waker`, as this will cause a `panic!`.
@@ -130,13 +130,23 @@ impl<'a> io::Write for File<'a> {
 
 /// Pxar encoder write adapter for `std::io::Write`.
 pub struct StandardWriter<T> {
-    inner: T,
+    inner: Option<T>,
     position: u64,
 }
 
 impl<T: io::Write> StandardWriter<T> {
     pub fn new(inner: T) -> Self {
-        Self { inner, position: 0 }
+        Self { inner: Some(inner), position: 0 }
+    }
+
+    fn inner(&mut self) -> io::Result<&mut T> {
+        self.inner
+            .as_mut()
+            .ok_or_else(|| io_format_err!("write after close"))
+    }
+
+    fn pin_to_inner(self: Pin<&mut Self>) -> io::Result<&mut T> {
+        unsafe { self.get_unchecked_mut() }.inner()
     }
 }
 
@@ -147,7 +157,7 @@ impl<T: io::Write> SeqWrite for StandardWriter<T> {
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
         let this = unsafe { self.get_unchecked_mut() };
-        Poll::Ready(match this.inner.write(buf) {
+        Poll::Ready(match this.inner()?.write(buf) {
             Ok(got) => {
                 this.position += got as u64;
                 Ok(got)
@@ -158,5 +168,17 @@ impl<T: io::Write> SeqWrite for StandardWriter<T> {
 
     fn poll_position(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<io::Result<u64>> {
         Poll::Ready(Ok(self.as_ref().position))
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<io::Result<()>> {
+        Poll::Ready(self.pin_to_inner().and_then(|inner| inner.flush()))
+    }
+
+    fn poll_close(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<io::Result<()>> {
+        let this = unsafe { self.get_unchecked_mut() };
+        Poll::Ready(match this.inner.as_mut() {
+            None => Ok(()),
+            Some(inner) => inner.flush(),
+        })
     }
 }

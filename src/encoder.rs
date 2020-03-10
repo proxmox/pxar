@@ -34,6 +34,16 @@ pub trait SeqWrite {
         buf: &[u8],
     ) -> Poll<io::Result<usize>>;
 
+    fn poll_flush(
+        self: Pin<&mut Self>,
+        cx: &mut Context,
+    ) -> Poll<io::Result<()>>;
+
+    fn poll_close(
+        self: Pin<&mut Self>,
+        cx: &mut Context,
+    ) -> Poll<io::Result<()>>;
+
     /// While writing to a pxar archive we need to remember how much dat we've written to track some
     /// offsets. Particularly items like the goodbye table need to be able to compute offsets to
     /// further back in the archive.
@@ -63,6 +73,14 @@ impl<'a> SeqWrite for &mut (dyn SeqWrite + 'a) {
         }
     }
 
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
+        unsafe { self.map_unchecked_mut(|this| &mut **this).poll_flush(cx) }
+    }
+
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
+        unsafe { self.map_unchecked_mut(|this| &mut **this).poll_close(cx) }
+    }
+
     fn poll_position(self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<u64>> {
         unsafe { self.map_unchecked_mut(|this| &mut **this).poll_position(cx) }
     }
@@ -88,6 +106,16 @@ impl PxarStruct for format::QuotaProjectId {
 }
 
 impl<'a> dyn SeqWrite + 'a {
+    /// awaitable version of `poll_flush`.
+    async fn flush(&mut self) -> io::Result<()> {
+        poll_fn(|cx| unsafe { Pin::new_unchecked(&mut *self).poll_flush(cx) }).await
+    }
+
+    /// awaitable version of `poll_close`.
+    async fn close(&mut self) -> io::Result<()> {
+        poll_fn(|cx| unsafe { Pin::new_unchecked(&mut *self).poll_close(cx) }).await
+    }
+
     /// awaitable version of `poll_position`.
     async fn position(&mut self) -> io::Result<u64> {
         poll_fn(|cx| unsafe { Pin::new_unchecked(&mut *self).poll_position(cx) }).await
@@ -358,7 +386,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         htype: u64,
         entry_data: &[u8],
     ) -> io::Result<()> {
-        self.check();
+        self.check()?;
 
         let file_offset = (&mut self.output as &mut dyn SeqWrite).position().await?;
 
@@ -622,6 +650,41 @@ impl<'a> FileImpl<'a> {
         }
     }
 
+    /// Poll write interface to more easily connect to tokio/futures.
+    #[cfg(any(feature = "tokio-io", feature = "futures-io"))]
+    pub fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context,
+        data: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        let this = self.get_mut();
+        this.check_remaining(data.len())?;
+        let output = unsafe { Pin::new_unchecked(&mut *this.output) };
+        match output.poll_seq_write(cx, data) {
+            Poll::Ready(Ok(put)) => {
+                this.remaining_size -= put as u64;
+                Poll::Ready(Ok(put))
+            }
+            other => other,
+        }
+    }
+
+    /// Poll flush interface to more easily connect to tokio/futures.
+    #[cfg(any(feature = "tokio-io", feature = "futures-io"))]
+    pub fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
+        unsafe {
+            self.map_unchecked_mut(|this| &mut this.output).poll_flush(cx)
+        }
+    }
+
+    /// Poll close/shutdown interface to more easily connect to tokio/futures.
+    #[cfg(any(feature = "tokio-io", feature = "futures-io"))]
+    pub fn poll_close(self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
+        unsafe {
+            self.map_unchecked_mut(|this| &mut this.output).poll_close(cx)
+        }
+    }
+
     /// Write file data for the current file entry in a pxar archive.
     ///
     /// This forwards to the output's `SeqWrite::poll_seq_write` and may write fewer bytes than
@@ -640,5 +703,43 @@ impl<'a> FileImpl<'a> {
         self.output.seq_write_all(data).await?;
         self.remaining_size -= data.len() as u64;
         Ok(())
+    }
+}
+
+#[cfg(feature = "tokio-io")]
+impl<'a> tokio::io::AsyncWrite for FileImpl<'a> {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        FileImpl::poll_write(self, cx, buf)
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
+        FileImpl::poll_flush(self, cx)
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
+        FileImpl::poll_close(self, cx)
+    }
+}
+
+#[cfg(feature = "futures-io")]
+impl<'a> futures::io::AsyncWrite for FileImpl<'a> {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        FileImpl::poll_write(self, cx, buf)
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
+        FileImpl::poll_flush(self, cx)
+    }
+
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
+        FileImpl::poll_close(self, cx)
     }
 }
