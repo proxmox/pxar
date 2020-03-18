@@ -25,12 +25,13 @@ tokio = { version = "0.2.10", optional = true, default-features = false }
 default = [ "futures-io", "tokio-io" ]
 futures-io = [ "futures" ]
 tokio-io = [ "tokio" ]
+tokio-fs = [ "tokio-io", "tokio/fs" ]
 
 async-example = [
     "failure",
     "futures-io",
     "tokio-io",
-    "tokio/fs",
+    "tokio-fs",
     "tokio/rt-threaded",
     "tokio/io-driver",
     "tokio/macros",

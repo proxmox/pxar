@@ -55,8 +55,8 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
         })
     }
 
-    /// Create a new regular file to the archive. This returns a `File` object to which the
-    /// contents have to be written out completely. Failing to do so will put the encoder into an
+    /// Create a new regular file in the archive. This returns a `File` object to which the
+    /// contents have to be written out *completely*. Failing to do so will put the encoder into an
     /// error state.
     pub fn create_file<'b, P: AsRef<Path>>(
         &'b mut self,
@@ -178,7 +178,11 @@ impl<T: io::Write> SeqWrite for StandardWriter<T> {
         let this = unsafe { self.get_unchecked_mut() };
         Poll::Ready(match this.inner.as_mut() {
             None => Ok(()),
-            Some(inner) => inner.flush(),
+            Some(inner) => {
+                inner.flush()?;
+                this.inner = None;
+                Ok(())
+            }
         })
     }
 }

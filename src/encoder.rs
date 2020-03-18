@@ -17,6 +17,7 @@ use crate::format::{self, GoodbyeItem};
 use crate::poll_fn::poll_fn;
 use crate::Metadata;
 
+pub mod aio;
 pub mod sync;
 
 #[doc(inline)]
