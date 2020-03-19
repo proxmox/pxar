@@ -35,15 +35,9 @@ pub trait SeqWrite {
         buf: &[u8],
     ) -> Poll<io::Result<usize>>;
 
-    fn poll_flush(
-        self: Pin<&mut Self>,
-        cx: &mut Context,
-    ) -> Poll<io::Result<()>>;
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>>;
 
-    fn poll_close(
-        self: Pin<&mut Self>,
-        cx: &mut Context,
-    ) -> Poll<io::Result<()>>;
+    fn poll_close(self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>>;
 
     /// While writing to a pxar archive we need to remember how much dat we've written to track some
     /// offsets. Particularly items like the goodbye table need to be able to compute offsets to
@@ -664,7 +658,8 @@ impl<'a> FileImpl<'a> {
     #[cfg(any(feature = "tokio-io", feature = "futures-io"))]
     pub fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
         unsafe {
-            self.map_unchecked_mut(|this| &mut this.output).poll_flush(cx)
+            self.map_unchecked_mut(|this| &mut this.output)
+                .poll_flush(cx)
         }
     }
 
@@ -672,7 +667,8 @@ impl<'a> FileImpl<'a> {
     #[cfg(any(feature = "tokio-io", feature = "futures-io"))]
     pub fn poll_close(self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
         unsafe {
-            self.map_unchecked_mut(|this| &mut this.output).poll_close(cx)
+            self.map_unchecked_mut(|this| &mut this.output)
+                .poll_close(cx)
         }
     }
 
@@ -699,11 +695,7 @@ impl<'a> FileImpl<'a> {
 
 #[cfg(feature = "tokio-io")]
 impl<'a> tokio::io::AsyncWrite for FileImpl<'a> {
-    fn poll_write(
-        self: Pin<&mut Self>,
-        cx: &mut Context,
-        buf: &[u8],
-    ) -> Poll<io::Result<usize>> {
+    fn poll_write(self: Pin<&mut Self>, cx: &mut Context, buf: &[u8]) -> Poll<io::Result<usize>> {
         FileImpl::poll_write(self, cx, buf)
     }
 
@@ -718,11 +710,7 @@ impl<'a> tokio::io::AsyncWrite for FileImpl<'a> {
 
 #[cfg(feature = "futures-io")]
 impl<'a> futures::io::AsyncWrite for FileImpl<'a> {
-    fn poll_write(
-        self: Pin<&mut Self>,
-        cx: &mut Context,
-        buf: &[u8],
-    ) -> Poll<io::Result<usize>> {
+    fn poll_write(self: Pin<&mut Self>, cx: &mut Context, buf: &[u8]) -> Poll<io::Result<usize>> {
         FileImpl::poll_write(self, cx, buf)
     }
 
