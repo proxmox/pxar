@@ -6,6 +6,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use crate::encoder::{self, SeqWrite};
+use crate::format;
 use crate::Metadata;
 
 // #[cfg(feature = "futures-io")]
@@ -55,7 +56,8 @@ impl<'a> Encoder<'a, TokioWriter<tokio::fs::File>> {
         Encoder::new(
             TokioWriter::new(tokio::fs::File::create(path.as_ref()).await?),
             metadata,
-        ).await
+        )
+        .await
     }
 }
 
@@ -80,11 +82,10 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
         'a: 'b,
     {
         Ok(File {
-            inner: self.inner.create_file(
-                metadata,
-                file_name.as_ref(),
-                file_size,
-            ).await?,
+            inner: self
+                .inner
+                .create_file(metadata, file_name.as_ref(), file_size)
+                .await?,
         })
     }
 
@@ -119,13 +120,52 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
         'a: 'b,
     {
         Ok(Encoder {
-            inner: self.inner.create_directory(file_name.as_ref(), metadata).await?,
+            inner: self
+                .inner
+                .create_directory(file_name.as_ref(), metadata)
+                .await?,
         })
     }
 
     /// Finish this directory. This is mandatory, otherwise the `Drop` handler will `panic!`.
     pub async fn finish(self) -> io::Result<()> {
         self.inner.finish().await
+    }
+
+    /// Add a symbolic link to the archive.
+    pub async fn add_symlink<PF: AsRef<Path>, PT: AsRef<Path>>(
+        &mut self,
+        metadata: &Metadata,
+        file_name: PF,
+        target: PT,
+    ) -> io::Result<()> {
+        self.inner
+            .add_symlink(metadata, file_name.as_ref(), target.as_ref())
+            .await
+    }
+
+    /// Add a hard link to the archive.
+    pub async fn add_hardlink<PF: AsRef<Path>, PT: AsRef<Path>>(
+        &mut self,
+        metadata: &Metadata,
+        file_name: PF,
+        target: PT,
+    ) -> io::Result<()> {
+        self.inner
+            .add_hardlink(metadata, file_name.as_ref(), target.as_ref())
+            .await
+    }
+
+    /// Add a device node to the archive.
+    pub async fn add_device<P: AsRef<Path>>(
+        &mut self,
+        metadata: &Metadata,
+        file_name: P,
+        device: format::Device,
+    ) -> io::Result<()> {
+        self.inner
+            .add_device(metadata, file_name.as_ref(), device)
+            .await
     }
 }
 
@@ -137,36 +177,30 @@ pub struct File<'a> {
 #[cfg(feature = "futures-io")]
 impl<'a> futures::io::AsyncWrite for File<'a> {
     fn poll_write(self: Pin<&mut Self>, cx: &mut Context, data: &[u8]) -> Poll<io::Result<usize>> {
-        unsafe { self.map_unchecked_mut(|this| &mut this.inner) }
-            .poll_write(cx, data)
+        unsafe { self.map_unchecked_mut(|this| &mut this.inner) }.poll_write(cx, data)
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
-        unsafe { self.map_unchecked_mut(|this| &mut this.inner) }
-            .poll_flush(cx)
+        unsafe { self.map_unchecked_mut(|this| &mut this.inner) }.poll_flush(cx)
     }
 
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
-        unsafe { self.map_unchecked_mut(|this| &mut this.inner) }
-            .poll_close(cx)
+        unsafe { self.map_unchecked_mut(|this| &mut this.inner) }.poll_close(cx)
     }
 }
 
 #[cfg(feature = "tokio-io")]
 impl<'a> tokio::io::AsyncWrite for File<'a> {
     fn poll_write(self: Pin<&mut Self>, cx: &mut Context, data: &[u8]) -> Poll<io::Result<usize>> {
-        unsafe { self.map_unchecked_mut(|this| &mut this.inner) }
-            .poll_write(cx, data)
+        unsafe { self.map_unchecked_mut(|this| &mut this.inner) }.poll_write(cx, data)
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
-        unsafe { self.map_unchecked_mut(|this| &mut this.inner) }
-            .poll_flush(cx)
+        unsafe { self.map_unchecked_mut(|this| &mut this.inner) }.poll_flush(cx)
     }
 
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
-        unsafe { self.map_unchecked_mut(|this| &mut this.inner) }
-            .poll_close(cx)
+        unsafe { self.map_unchecked_mut(|this| &mut this.inner) }.poll_close(cx)
     }
 }
 
@@ -186,7 +220,10 @@ mod futures_writer {
 
     impl<T: futures::io::AsyncWrite> FuturesWriter<T> {
         pub fn new(inner: T) -> Self {
-            Self { inner: Some(inner), position: 0 }
+            Self {
+                inner: Some(inner),
+                position: 0,
+            }
         }
 
         fn inner_mut(self: &mut Self) -> io::Result<Pin<&mut T>> {
@@ -198,8 +235,7 @@ mod futures_writer {
         }
 
         fn inner(self: Pin<&mut Self>) -> io::Result<Pin<&mut T>> {
-            unsafe { self.get_unchecked_mut() }
-                .inner_mut()
+            unsafe { self.get_unchecked_mut() }.inner_mut()
         }
     }
 
@@ -255,7 +291,10 @@ mod tokio_writer {
 
     impl<T: tokio::io::AsyncWrite> TokioWriter<T> {
         pub fn new(inner: T) -> Self {
-            Self { inner: Some(inner), position: 0 }
+            Self {
+                inner: Some(inner),
+                position: 0,
+            }
         }
 
         fn inner_mut(self: &mut Self) -> io::Result<Pin<&mut T>> {
@@ -267,8 +306,7 @@ mod tokio_writer {
         }
 
         fn inner(self: Pin<&mut Self>) -> io::Result<Pin<&mut T>> {
-            unsafe { self.get_unchecked_mut() }
-                .inner_mut()
+            unsafe { self.get_unchecked_mut() }.inner_mut()
         }
     }
 

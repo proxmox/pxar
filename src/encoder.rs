@@ -107,16 +107,6 @@ impl PxarStruct for format::QuotaProjectId {
 }
 
 impl<'a> dyn SeqWrite + 'a {
-    /// awaitable version of `poll_flush`.
-    async fn flush(&mut self) -> io::Result<()> {
-        poll_fn(|cx| unsafe { Pin::new_unchecked(&mut *self).poll_flush(cx) }).await
-    }
-
-    /// awaitable version of `poll_close`.
-    async fn close(&mut self) -> io::Result<()> {
-        poll_fn(|cx| unsafe { Pin::new_unchecked(&mut *self).poll_close(cx) }).await
-    }
-
     /// awaitable version of `poll_position`.
     async fn position(&mut self) -> io::Result<u64> {
         poll_fn(|cx| unsafe { Pin::new_unchecked(&mut *self).poll_position(cx) }).await

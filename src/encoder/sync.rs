@@ -7,6 +7,7 @@ use std::task::{Context, Poll};
 
 use crate::decoder::sync::StandardReader;
 use crate::encoder::{self, SeqWrite};
+use crate::format;
 use crate::util::poll_result_once;
 use crate::Metadata;
 
@@ -111,6 +112,42 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
     pub fn finish(self) -> io::Result<()> {
         poll_result_once(self.inner.finish())
     }
+
+    /// Add a symbolic link to the archive.
+    pub fn add_symlink<PF: AsRef<Path>, PT: AsRef<Path>>(
+        &mut self,
+        metadata: &Metadata,
+        file_name: PF,
+        target: PT,
+    ) -> io::Result<()> {
+        poll_result_once(
+            self.inner
+                .add_symlink(metadata, file_name.as_ref(), target.as_ref()),
+        )
+    }
+
+    /// Add a hard link to the archive.
+    pub fn add_hardlink<PF: AsRef<Path>, PT: AsRef<Path>>(
+        &mut self,
+        metadata: &Metadata,
+        file_name: PF,
+        target: PT,
+    ) -> io::Result<()> {
+        poll_result_once(
+            self.inner
+                .add_hardlink(metadata, file_name.as_ref(), target.as_ref()),
+        )
+    }
+
+    /// Add a device node to the archive.
+    pub fn add_device<P: AsRef<Path>>(
+        &mut self,
+        metadata: &Metadata,
+        file_name: P,
+        device: format::Device,
+    ) -> io::Result<()> {
+        poll_result_once(self.inner.add_device(metadata, file_name.as_ref(), device))
+    }
 }
 
 #[repr(transparent)]
@@ -136,7 +173,10 @@ pub struct StandardWriter<T> {
 
 impl<T: io::Write> StandardWriter<T> {
     pub fn new(inner: T) -> Self {
-        Self { inner: Some(inner), position: 0 }
+        Self {
+            inner: Some(inner),
+            position: 0,
+        }
     }
 
     fn inner(&mut self) -> io::Result<&mut T> {
