@@ -100,6 +100,11 @@ impl Metadata {
     pub fn is_regular_file(&self) -> bool {
         self.stat.is_regular_file()
     }
+
+    /// Get the mtime as duration since the epoch.
+    pub fn mtime_as_duration(&self) -> std::time::Duration {
+        self.stat.mtime_as_duration()
+    }
 }
 
 /// ACL entries of a pxar archive.
