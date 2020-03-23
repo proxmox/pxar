@@ -257,6 +257,14 @@ impl<T: SeqRead> DecoderImpl<T> {
         }
     }
 
+    pub fn content_size(&self) -> Option<u64> {
+        if let State::InPayload { .. } = self.state {
+            Some(self.current_header.content_size())
+        } else {
+            None
+        }
+    }
+
     pub fn content_reader<'a>(&'a mut self) -> Option<Contents<'a>> {
         if let State::InPayload { offset } = &mut self.state {
             Some(Contents::new(

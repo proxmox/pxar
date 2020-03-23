@@ -64,6 +64,11 @@ impl<T: SeqRead> Decoder<T> {
         self.inner.content_reader().map(|inner| Contents { inner })
     }
 
+    /// Get the size of the current contents, if the entry has contents.
+    pub fn content_size(&self) -> Option<u64> {
+        self.inner.content_size()
+    }
+
     /// Include goodbye tables in iteration.
     pub fn enable_goodbye_entries(&mut self, on: bool) {
         self.inner.with_goodbye_tables = on;
