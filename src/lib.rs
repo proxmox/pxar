@@ -212,6 +212,11 @@ impl Entry {
         &self.metadata
     }
 
+    /// Get the entry-type specific information.
+    pub fn kind(&self) -> &EntryKind {
+        &self.kind
+    }
+
     /// Get the value of the symbolic link if it is one.
     pub fn get_symlink(&self) -> Option<&OsStr> {
         match &self.kind {
