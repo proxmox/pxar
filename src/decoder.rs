@@ -219,7 +219,7 @@ impl<T: SeqRead> DecoderImpl<T> {
                     // hierarchy and parse the next PXAR_FILENAME or the PXAR_GOODBYE:
                     self.read_next_item().await?;
                 }
-                State::InPayload { offset }=> {
+                State::InPayload { offset } => {
                     // We need to skip the current payload first.
                     self.skip_entry(offset).await?;
                     self.read_next_item().await?;
@@ -584,20 +584,16 @@ impl<'a> SeqRead for Contents<'a> {
     ) -> Poll<io::Result<usize>> {
         let max_read = (buf.len() as u64).min(self.remaining()) as usize;
         if max_read == 0 {
-            return Poll::Ready(Ok(0))
+            return Poll::Ready(Ok(0));
         }
 
         let buf = &mut buf[..max_read];
-        let got = ready!(
-            unsafe { Pin::new_unchecked(&mut *self.input) }
-                .poll_seq_read(cx, buf)
-        )?;
+        let got = ready!(unsafe { Pin::new_unchecked(&mut *self.input) }.poll_seq_read(cx, buf))?;
         *self.at += got as u64;
         Poll::Ready(Ok(got))
     }
 
     fn poll_position(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<io::Result<u64>>> {
-        unsafe { Pin::new_unchecked(&mut *self.input) }
-            .poll_position(cx)
+        unsafe { Pin::new_unchecked(&mut *self.input) }.poll_position(cx)
     }
 }

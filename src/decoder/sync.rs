@@ -61,9 +61,7 @@ impl<T: SeqRead> Decoder<T> {
 
     /// Get a reader for the contents of the current entry, if the entry has contents.
     pub fn contents(&mut self) -> Option<Contents> {
-        self.inner
-            .content_reader()
-            .map(|inner| Contents { inner })
+        self.inner.content_reader().map(|inner| Contents { inner })
     }
 
     /// Include goodbye tables in iteration.
