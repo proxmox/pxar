@@ -127,6 +127,17 @@ pub struct Acl {
     pub default_groups: Vec<format::acl::Group>,
 }
 
+impl Acl {
+    pub fn is_empty(&self) -> bool {
+        self.users.is_empty()
+            && self.groups.is_empty()
+            && self.group_obj.is_none()
+            && self.default.is_none()
+            && self.default_users.is_empty()
+            && self.default_groups.is_empty()
+    }
+}
+
 /// Pxar archive entry kind.
 ///
 /// Identifies whether the entry is a file, symlink, directory, etc.
