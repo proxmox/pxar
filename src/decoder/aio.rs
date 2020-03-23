@@ -2,6 +2,9 @@
 
 use std::io;
 
+#[cfg(feature = "tokio-fs")]
+use std::path::Path;
+
 use crate::decoder::{self, SeqRead};
 use crate::Entry;
 
@@ -14,20 +17,29 @@ pub struct Decoder<T> {
 }
 
 #[cfg(feature = "futures-io")]
-impl<T: futures::io::AsyncRead> Decoder<T> {
+impl<T: futures::io::AsyncRead> Decoder<FuturesReader<T>> {
     /// Decode a `pxar` archive from a `futures::io::AsyncRead` input.
     #[inline]
-    pub async fn from_futures(input: T) -> io::Result<Decoder<FuturesReader<T>>> {
+    pub async fn from_futures(input: T) -> io::Result<Self> {
         Decoder::new(FuturesReader::new(input)).await
     }
 }
 
 #[cfg(feature = "tokio-io")]
-impl<T: tokio::io::AsyncRead> Decoder<T> {
+impl<T: tokio::io::AsyncRead> Decoder<TokioReader<T>> {
     /// Decode a `pxar` archive from a `tokio::io::AsyncRead` input.
     #[inline]
-    pub async fn from_tokio(input: T) -> io::Result<Decoder<TokioReader<T>>> {
+    pub async fn from_tokio(input: T) -> io::Result<Self> {
         Decoder::new(TokioReader::new(input)).await
+    }
+}
+
+#[cfg(feature = "tokio-fs")]
+impl Decoder<TokioReader<tokio::fs::File>> {
+    /// Decode a `pxar` archive from a `tokio::io::AsyncRead` input.
+    #[inline]
+    pub async fn open<P: AsRef<Path>>(path: P) -> io::Result<Self> {
+        Decoder::from_tokio(tokio::fs::File::open(path.as_ref()).await?).await
     }
 }
 

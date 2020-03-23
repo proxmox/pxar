@@ -1,6 +1,7 @@
 //! Blocking `pxar` format handling.
 
 use std::io;
+use std::path::Path;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -21,11 +22,18 @@ pub struct Decoder<T> {
     inner: decoder::DecoderImpl<T>,
 }
 
-impl<T: io::Read> Decoder<T> {
+impl<T: io::Read> Decoder<StandardReader<T>> {
     /// Decode a `pxar` archive from a regular `std::io::Read` input.
     #[inline]
-    pub fn from_std(input: T) -> io::Result<Decoder<StandardReader<T>>> {
+    pub fn from_std(input: T) -> io::Result<Self> {
         Decoder::new(StandardReader::new(input))
+    }
+}
+
+impl Decoder<StandardReader<std::fs::File>> {
+    /// Convenience shortcut for `File::open` followed by `Accessor::from_file`.
+    pub fn open<P: AsRef<Path>>(path: P) -> io::Result<Self> {
+        Self::from_std(std::fs::File::open(path.as_ref())?)
     }
 }
 
