@@ -6,8 +6,10 @@
 //! item data.
 
 use std::cmp::Ordering;
+use std::ffi::OsStr;
 use std::io;
 use std::mem::size_of;
+use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 
 use endian_trait::Endian;
@@ -226,9 +228,21 @@ pub struct Symlink {
     pub data: Vec<u8>,
 }
 
+impl AsRef<OsStr> for Symlink {
+    fn as_ref(&self) -> &OsStr {
+        OsStr::from_bytes(&self.data)
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Hardlink {
     pub data: Vec<u8>,
+}
+
+impl AsRef<OsStr> for Hardlink {
+    fn as_ref(&self) -> &OsStr {
+        OsStr::from_bytes(&self.data)
+    }
 }
 
 #[derive(Clone, Debug, Eq)]

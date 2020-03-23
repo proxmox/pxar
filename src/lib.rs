@@ -4,7 +4,6 @@
 
 use std::ffi::OsStr;
 use std::mem;
-use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
 #[macro_use]
@@ -220,7 +219,7 @@ impl Entry {
     /// Get the value of the symbolic link if it is one.
     pub fn get_symlink(&self) -> Option<&OsStr> {
         match &self.kind {
-            EntryKind::Symlink(link) => Some(OsStr::from_bytes(&link.data)),
+            EntryKind::Symlink(link) => Some(link.as_ref()),
             _ => None,
         }
     }
@@ -228,7 +227,7 @@ impl Entry {
     /// Get the value of the hard link if it is one.
     pub fn get_hardlink(&self) -> Option<&OsStr> {
         match &self.kind {
-            EntryKind::Hardlink(link) => Some(OsStr::from_bytes(&link.data)),
+            EntryKind::Hardlink(link) => Some(link.as_ref()),
             _ => None,
         }
     }
