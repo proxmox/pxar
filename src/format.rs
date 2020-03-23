@@ -228,9 +228,15 @@ pub struct Symlink {
     pub data: Vec<u8>,
 }
 
+impl AsRef<[u8]> for Symlink {
+    fn as_ref(&self) -> &[u8] {
+        &self.data
+    }
+}
+
 impl AsRef<OsStr> for Symlink {
     fn as_ref(&self) -> &OsStr {
-        OsStr::from_bytes(&self.data)
+        OsStr::from_bytes(&self.data[..self.data.len().max(1) - 1])
     }
 }
 
@@ -239,9 +245,15 @@ pub struct Hardlink {
     pub data: Vec<u8>,
 }
 
+impl AsRef<[u8]> for Hardlink {
+    fn as_ref(&self) -> &[u8] {
+        &self.data
+    }
+}
+
 impl AsRef<OsStr> for Hardlink {
     fn as_ref(&self) -> &OsStr {
-        OsStr::from_bytes(&self.data)
+        OsStr::from_bytes(&self.data[..self.data.len().max(1) - 1])
     }
 }
 
