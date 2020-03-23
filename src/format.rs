@@ -32,6 +32,7 @@ pub mod mode {
     pub const IFDIR  : u64 = 0o0040000;
     pub const IFCHR  : u64 = 0o0020000;
     pub const IFIFO  : u64 = 0o0010000;
+
     pub const ISUID  : u64 = 0o0004000;
     pub const ISGID  : u64 = 0o0002000;
     pub const ISVTX  : u64 = 0o0001000;

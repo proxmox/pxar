@@ -23,7 +23,11 @@ pub mod encoder;
 
 /// Reexport of `format::Entry`. Since this conveys mostly information found via the `stat` syscall
 /// we mostly use this name for public interfaces.
+#[doc(inline)]
 pub use format::Entry as Stat;
+
+#[doc(inline)]
+pub use format::mode;
 
 /// File metadata found in pxar archives.
 ///
