@@ -191,7 +191,7 @@ impl<T: SeqRead> DecoderImpl<T> {
             current_header: unsafe { mem::zeroed() },
             entry: Entry {
                 path,
-                kind: EntryKind::EndOfDirectory,
+                kind: EntryKind::GoodbyeTable,
                 metadata: Metadata::default(),
             },
             path_lengths: Vec::new(),
@@ -233,7 +233,7 @@ impl<T: SeqRead> DecoderImpl<T> {
                 format::PXAR_FILENAME => return self.handle_file_entry().await,
                 format::PXAR_GOODBYE => {
                     if self.with_goodbye_tables {
-                        self.entry.kind = EntryKind::EndOfDirectory;
+                        self.entry.kind = EntryKind::GoodbyeTable;
                         self.state = State::InPayload;
                         return Ok(Some(self.entry.take()));
                     }

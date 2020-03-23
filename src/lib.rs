@@ -145,7 +145,7 @@ pub enum EntryKind {
 
     /// End of a directory. This is for internal use to remember the goodbye-table of a directory
     /// entry. Will not occur during normal iteration.
-    EndOfDirectory,
+    GoodbyeTable,
 }
 
 /// A pxar archive entry. This contains the current path, file metadata and entry type specific
@@ -162,14 +162,14 @@ impl Entry {
     /// Clear everything except for the path.
     fn clear_data(&mut self) {
         self.metadata = Metadata::default();
-        self.kind = EntryKind::EndOfDirectory;
+        self.kind = EntryKind::GoodbyeTable;
     }
 
     fn internal_default() -> Self {
         Self {
             path: PathBuf::default(),
             metadata: Metadata::default(),
-            kind: EntryKind::EndOfDirectory,
+            kind: EntryKind::GoodbyeTable,
         }
     }
 

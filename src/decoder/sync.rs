@@ -58,6 +58,11 @@ impl<T: SeqRead> Decoder<T> {
     pub fn next(&mut self) -> Option<io::Result<Entry>> {
         poll_result_once(self.inner.next_do()).transpose()
     }
+
+    /// Include goodbye tables in iteration.
+    pub fn enable_goodbye_entries(&mut self, on: bool) {
+        self.inner.with_goodbye_tables = on;
+    }
 }
 
 impl<T: SeqRead> Iterator for Decoder<T> {

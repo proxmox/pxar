@@ -56,6 +56,11 @@ impl<T: SeqRead> Decoder<T> {
         self.inner.next_do().await.transpose()
     }
 
+    /// Include goodbye tables in iteration.
+    pub fn enable_goodbye_entries(&mut self, on: bool) {
+        self.inner.with_goodbye_tables = on;
+    }
+
     /// Turn this decoder into a `Stream`.
     #[cfg(feature = "futures-io")]
     pub fn into_stream(self) -> DecoderStream<T> {
