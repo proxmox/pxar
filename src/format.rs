@@ -228,6 +228,12 @@ pub struct Symlink {
     pub data: Vec<u8>,
 }
 
+impl Symlink {
+    pub fn as_os_str(&self) -> &OsStr {
+        self.as_ref()
+    }
+}
+
 impl AsRef<[u8]> for Symlink {
     fn as_ref(&self) -> &[u8] {
         &self.data
@@ -243,6 +249,12 @@ impl AsRef<OsStr> for Symlink {
 #[derive(Clone, Debug)]
 pub struct Hardlink {
     pub data: Vec<u8>,
+}
+
+impl Hardlink {
+    pub fn as_os_str(&self) -> &OsStr {
+        self.as_ref()
+    }
 }
 
 impl AsRef<[u8]> for Hardlink {
