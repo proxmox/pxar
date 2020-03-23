@@ -158,7 +158,7 @@ pub(crate) struct DecoderImpl<T> {
 enum State {
     Begin,
     Default,
-    InPayload,
+    InPayload { offset: u64 },
     InDirectory,
     Eof,
 }
@@ -219,9 +219,9 @@ impl<T: SeqRead> DecoderImpl<T> {
                     // hierarchy and parse the next PXAR_FILENAME or the PXAR_GOODBYE:
                     self.read_next_item().await?;
                 }
-                State::InPayload => {
+                State::InPayload { offset }=> {
                     // We need to skip the current payload first.
-                    self.skip_entry().await?;
+                    self.skip_entry(offset).await?;
                     self.read_next_item().await?;
                 }
                 State::InDirectory => {
@@ -234,11 +234,11 @@ impl<T: SeqRead> DecoderImpl<T> {
                 format::PXAR_GOODBYE => {
                     if self.with_goodbye_tables {
                         self.entry.kind = EntryKind::GoodbyeTable;
-                        self.state = State::InPayload;
+                        self.state = State::InPayload { offset: 0 };
                         return Ok(Some(self.entry.take()));
                     }
 
-                    self.skip_entry().await?;
+                    self.skip_entry(0).await?;
                     if self.path_lengths.pop().is_some() {
                         self.state = State::Default;
                         // and move on:
@@ -254,6 +254,18 @@ impl<T: SeqRead> DecoderImpl<T> {
                     h
                 ),
             }
+        }
+    }
+
+    pub fn content_reader<'a>(&'a mut self) -> Option<Contents<'a>> {
+        if let State::InPayload { offset } = &mut self.state {
+            Some(Contents::new(
+                &mut self.input,
+                offset,
+                self.current_header.content_size(),
+            ))
+        } else {
+            None
         }
     }
 
@@ -430,7 +442,7 @@ impl<T: SeqRead> DecoderImpl<T> {
                     size: self.current_header.content_size(),
                     offset,
                 };
-                self.state = State::InPayload;
+                self.state = State::InPayload { offset: 0 };
                 return Ok(ItemResult::Entry);
             }
             format::PXAR_FILENAME | format::PXAR_GOODBYE => {
@@ -450,8 +462,8 @@ impl<T: SeqRead> DecoderImpl<T> {
     // These utilize additional information and hence are not part of the `dyn SeqRead` impl.
     //
 
-    async fn skip_entry(&mut self) -> io::Result<()> {
-        let mut len = self.current_header.content_size();
+    async fn skip_entry(&mut self, offset: u64) -> io::Result<()> {
+        let mut len = self.current_header.content_size() - offset;
         let scratch = scratch_buffer();
         while len >= (scratch.len() as u64) {
             (&mut self.input as &mut dyn SeqRead)
@@ -544,5 +556,48 @@ impl<T: SeqRead> DecoderImpl<T> {
 
     async fn read_quota_project_id(&mut self) -> io::Result<format::QuotaProjectId> {
         self.read_simple_entry("quota project id").await
+    }
+}
+
+pub struct Contents<'a> {
+    input: &'a mut dyn SeqRead,
+    at: &'a mut u64,
+    len: u64,
+}
+
+impl<'a> Contents<'a> {
+    pub fn new(input: &'a mut dyn SeqRead, at: &'a mut u64, len: u64) -> Self {
+        Self { input, at, len }
+    }
+
+    #[inline]
+    fn remaining(&self) -> u64 {
+        self.len - *self.at
+    }
+}
+
+impl<'a> SeqRead for Contents<'a> {
+    fn poll_seq_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context,
+        buf: &mut [u8],
+    ) -> Poll<io::Result<usize>> {
+        let max_read = (buf.len() as u64).min(self.remaining()) as usize;
+        if max_read == 0 {
+            return Poll::Ready(Ok(0))
+        }
+
+        let buf = &mut buf[..max_read];
+        let got = ready!(
+            unsafe { Pin::new_unchecked(&mut *self.input) }
+                .poll_seq_read(cx, buf)
+        )?;
+        *self.at += got as u64;
+        Poll::Ready(Ok(got))
+    }
+
+    fn poll_position(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<io::Result<u64>>> {
+        unsafe { Pin::new_unchecked(&mut *self.input) }
+            .poll_position(cx)
     }
 }

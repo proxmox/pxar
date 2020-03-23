@@ -59,6 +59,13 @@ impl<T: SeqRead> Decoder<T> {
         poll_result_once(self.inner.next_do()).transpose()
     }
 
+    /// Get a reader for the contents of the current entry, if the entry has contents.
+    pub fn contents(&mut self) -> Option<Contents> {
+        self.inner
+            .content_reader()
+            .map(|inner| Contents { inner })
+    }
+
     /// Include goodbye tables in iteration.
     pub fn enable_goodbye_entries(&mut self, on: bool) {
         self.inner.with_goodbye_tables = on;
@@ -91,5 +98,15 @@ impl<T: io::Read> SeqRead for StandardReader<T> {
         buf: &mut [u8],
     ) -> Poll<io::Result<usize>> {
         Poll::Ready(unsafe { self.get_unchecked_mut() }.inner.read(buf))
+    }
+}
+
+pub struct Contents<'a> {
+    inner: decoder::Contents<'a>,
+}
+
+impl<'a> io::Read for Contents<'a> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        poll_result_once((&mut self.inner as &mut dyn SeqRead).seq_read(buf))
     }
 }
