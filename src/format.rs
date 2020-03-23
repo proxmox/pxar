@@ -156,6 +156,14 @@ impl Entry {
     }
 }
 
+/// Convenience accessor methods.
+impl Entry {
+    /// Get the mtime as duration since the epoch.
+    pub fn mtime_as_duration(&self) -> std::time::Duration {
+        std::time::Duration::from_nanos(self.mtime)
+    }
+}
+
 /// Convenience methods.
 impl Entry {
     /// Check whether this is a directory.
