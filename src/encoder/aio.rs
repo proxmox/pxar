@@ -49,7 +49,7 @@ impl<'a, T: tokio::io::AsyncWrite + 'a> Encoder<'a, TokioWriter<T>> {
 #[cfg(feature = "tokio-fs")]
 impl<'a> Encoder<'a, TokioWriter<tokio::fs::File>> {
     /// Convenience shortcut for `File::create` followed by `Encoder::from_tokio`.
-    pub fn create<'b, P: AsRef<Path>>(
+    pub async fn create<'b, P: AsRef<Path>>(
         path: P,
         metadata: &'b Metadata,
     ) -> io::Result<Encoder<'a, TokioWriter<tokio::fs::File>>> {
