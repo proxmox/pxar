@@ -501,12 +501,12 @@ impl<T: SeqRead> DecoderImpl<T> {
         &mut self,
         what: &'static str,
     ) -> io::Result<U> {
-        if self.current_header.content_size() != (size_of::<T>() as u64) {
+        if self.current_header.content_size() != (size_of::<U>() as u64) {
             io_bail!(
                 "bad {} size: {} (expected {})",
                 what,
                 self.current_header.content_size(),
-                size_of::<T>(),
+                size_of::<U>(),
             );
         }
         (&mut self.input as &mut dyn SeqRead).seq_read_entry().await
