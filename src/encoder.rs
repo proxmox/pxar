@@ -88,18 +88,6 @@ impl<'a> SeqWrite for &mut (dyn SeqWrite + 'a) {
     }
 }
 
-trait PxarStruct: Endian {
-    const HTYPE: u64;
-}
-
-impl PxarStruct for format::Entry {
-    const HTYPE: u64 = format::PXAR_ENTRY;
-}
-
-impl PxarStruct for format::QuotaProjectId {
-    const HTYPE: u64 = format::PXAR_QUOTA_PROJID;
-}
-
 impl<'a> dyn SeqWrite + 'a {
     /// awaitable version of `poll_position`.
     async fn position(&mut self) -> io::Result<u64> {
@@ -159,11 +147,6 @@ impl<'a> dyn SeqWrite + 'a {
             std::slice::from_raw_parts(&data as *const E as *const u8, size_of_val(&data))
         })
         .await
-    }
-
-    /// Write a pxar entry consiting of an endian-swappable struct.
-    async fn seq_write_pxar_struct<E: PxarStruct>(&mut self, data: E) -> io::Result<()> {
-        self.seq_write_pxar_struct_entry(E::HTYPE, data).await
     }
 }
 
@@ -446,7 +429,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
 
     async fn encode_metadata(&mut self, metadata: &Metadata) -> io::Result<()> {
         (&mut self.output as &mut dyn SeqWrite)
-            .seq_write_pxar_struct(metadata.stat.clone())
+            .seq_write_pxar_struct_entry(format::PXAR_ENTRY, metadata.stat.clone())
             .await?;
 
         for xattr in &metadata.xattrs {
@@ -523,7 +506,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         quota_project_id: &format::QuotaProjectId,
     ) -> io::Result<()> {
         (&mut self.output as &mut dyn SeqWrite)
-            .seq_write_pxar_struct(quota_project_id.clone())
+            .seq_write_pxar_struct_entry(format::PXAR_QUOTA_PROJID, quota_project_id.clone())
             .await
     }
 
