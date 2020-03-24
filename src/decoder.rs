@@ -180,12 +180,12 @@ enum ItemResult {
     Entry,
 }
 
-impl<T: SeqRead> DecoderImpl<T> {
-    pub async fn new(input: T) -> io::Result<Self> {
+impl<I: SeqRead> DecoderImpl<I> {
+    pub async fn new(input: I) -> io::Result<Self> {
         Self::new_full(input, "/".into()).await
     }
 
-    pub(crate) async fn new_full(input: T, path: PathBuf) -> io::Result<Self> {
+    pub(crate) async fn new_full(input: I, path: PathBuf) -> io::Result<Self> {
         let this = DecoderImpl {
             input,
             current_header: unsafe { mem::zeroed() },
@@ -318,9 +318,9 @@ impl<T: SeqRead> DecoderImpl<T> {
 
         #[derive(Endian)]
         #[repr(C)]
-        struct WithHeader<U: Endian> {
+        struct WithHeader<T: Endian> {
             header: Header,
-            data: U,
+            data: T,
         }
 
         let entry: WithHeader<format::Entry> = {
@@ -497,16 +497,16 @@ impl<T: SeqRead> DecoderImpl<T> {
     }
 
     /// Helper to read a struct entry while checking its size.
-    async fn read_simple_entry<U: Endian + 'static>(
+    async fn read_simple_entry<T: Endian + 'static>(
         &mut self,
         what: &'static str,
-    ) -> io::Result<U> {
-        if self.current_header.content_size() != (size_of::<U>() as u64) {
+    ) -> io::Result<T> {
+        if self.current_header.content_size() != (size_of::<T>() as u64) {
             io_bail!(
                 "bad {} size: {} (expected {})",
                 what,
                 self.current_header.content_size(),
-                size_of::<U>(),
+                size_of::<T>(),
             );
         }
         (&mut self.input as &mut dyn SeqRead).seq_read_entry().await
