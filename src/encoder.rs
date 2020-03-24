@@ -150,16 +150,28 @@ impl<'a> dyn SeqWrite + 'a {
     }
 }
 
+/// Error conditions caused by wrong usage of this crate.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EncodeError {
+    /// The user dropped a `File` without without finishing writing all of its contents.
+    ///
+    /// This is required because the payload lengths is written out at the begining and decoding
+    /// requires there to follow the right amount of data.
+    IncompleteFile,
+
+    /// The user dropped a directory without finalizing it.
+    ///
+    /// Finalizing is required to build the goodbye table at the end of a directory.
+    IncompleteDirectory,
+}
+
 #[derive(Default)]
 struct EncoderState {
     /// Goodbye items for this directory, excluding the tail.
     items: Vec<GoodbyeItem>,
 
-    /// Error condition: the user dropped a file without writing all of its contents.
-    incomplete_file_error: bool,
-
-    /// Error condition: the user dropped the directory without finalizing it.
-    incomplete_directory_error: bool,
+    /// User caused error conditions.
+    encode_error: Option<EncodeError>,
 
     /// Offset of this directory's ENTRY.
     entry_offset: u64,
@@ -172,6 +184,19 @@ struct EncoderState {
 
     /// If this is a subdirectory, this contains this directory's hash for the goodbye item.
     file_hash: u64,
+}
+
+impl EncoderState {
+    fn merge_error(&mut self, error: Option<EncodeError>) {
+        // one error is enough:
+        if self.encode_error.is_none() {
+            self.encode_error = error;
+        }
+    }
+
+    fn add_error(&mut self, error: EncodeError) {
+        self.merge_error(Some(error));
+    }
 }
 
 /// The encoder state machine implementation for a directory.
@@ -189,12 +214,9 @@ impl<'a, T: SeqWrite + 'a> Drop for EncoderImpl<'a, T> {
     fn drop(&mut self) {
         if let Some(ref mut parent) = self.parent {
             // propagate errors:
-            if self.state.incomplete_file_error {
-                parent.incomplete_file_error = true;
-            }
-
-            if self.state.incomplete_directory_error || !self.finished {
-                parent.incomplete_directory_error = true;
+            parent.merge_error(self.state.encode_error);
+            if !self.finished {
+                parent.add_error(EncodeError::IncompleteDirectory);
             }
         } else if !self.finished {
             // FIXME: how do we deal with this?
@@ -222,10 +244,10 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
     }
 
     fn check(&self) -> io::Result<()> {
-        if self.state.incomplete_file_error {
-            io_bail!("incomplete file");
-        } else {
-            Ok(())
+        match self.state.encode_error {
+            Some(EncodeError::IncompleteFile) => io_bail!("incomplete file"),
+            Some(EncodeError::IncompleteDirectory) => io_bail!("directory not finalized"),
+            None => Ok(())
         }
     }
 
@@ -594,7 +616,7 @@ pub struct FileImpl<'a> {
     /// exactly zero.
     remaining_size: u64,
 
-    /// The directory containing this file. This is where we propagate the `incomplete_file_error`
+    /// The directory containing this file. This is where we propagate the `IncompleteFile` error
     /// to, and where we insert our `GoodbyeItem`.
     parent: &'a mut EncoderState,
 }
@@ -602,7 +624,7 @@ pub struct FileImpl<'a> {
 impl<'a> Drop for FileImpl<'a> {
     fn drop(&mut self) {
         if self.remaining_size != 0 {
-            self.parent.incomplete_file_error = true;
+            self.parent.add_error(EncodeError::IncompleteFile);
         }
 
         self.parent.items.push(self.goodbye_item.clone());
