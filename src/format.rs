@@ -324,6 +324,19 @@ pub struct Device {
     pub minor: u64,
 }
 
+#[cfg(target_os = "linux")]
+impl Device {
+    /// Get a `dev_t` value for this device.
+    #[rustfmt::skip]
+    pub fn to_dev_t(&self) -> u64 {
+        // see bits/sysmacros.h
+        ((self.major & 0x0000_0fff) << 8) |
+        ((self.major & 0xffff_f000) << 32) |
+         (self.minor & 0x0000_00ff) |
+        ((self.minor & 0xffff_ff00) << 12)
+    }
+}
+
 #[derive(Clone, Debug)]
 #[repr(C)]
 pub struct FCaps {
