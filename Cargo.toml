@@ -27,6 +27,8 @@ futures-io = [ "futures" ]
 tokio-io = [ "tokio" ]
 tokio-fs = [ "tokio-io", "tokio/fs" ]
 
+full = [ "tokio-fs", "futures-io" ]
+
 async-example = [
     "failure",
     "futures-io",
