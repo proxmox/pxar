@@ -227,14 +227,20 @@ impl<I: SeqRead> DecoderImpl<I> {
                 }
                 State::InGoodbyeTable => {
                     self.skip_entry(0).await?;
-                    if self.path_lengths.pop().is_some() {
-                        self.state = State::Default;
-                        // and move on:
-                        continue;
+                    if self.path_lengths.pop().is_none() {
+                        // The root directory has an entry containing '1'.
+                        io_bail!("unexpected EOF in goodbye table");
                     }
-                    self.state = State::Eof;
-                    // early out:
-                    return Ok(None);
+
+                    if self.path_lengths.is_empty() {
+                        // we are at the end of the archive now
+                        self.state = State::Eof;
+                        return Ok(None);
+                    }
+
+                    // We left the directory, now keep going in our parent.
+                    self.state = State::Default;
+                    continue;
                 }
                 State::InDirectory => {
                     // We're at the next FILENAME or GOODBYE item.
