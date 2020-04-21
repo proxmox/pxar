@@ -164,6 +164,16 @@ impl Entry {
     pub fn mtime_as_duration(&self) -> std::time::Duration {
         std::time::Duration::from_nanos(self.mtime)
     }
+
+    /// Get the file type portion of the mode bitfield.
+    pub fn get_file_bits(&self) -> u64 {
+        self.mode & mode::IFMT
+    }
+
+    /// Get the permission portion of the mode bitfield.
+    pub fn get_permission_bits(&self) -> u64 {
+        self.mode & !mode::IFMT
+    }
 }
 
 /// Convenience methods.
