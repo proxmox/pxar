@@ -99,7 +99,7 @@ impl<'a> dyn SeqRead + 'a {
         let mut eof_ok = true;
         while !buf.is_empty() {
             match self.seq_read(buf).await? {
-                0 if eof_ok => break,
+                0 if eof_ok => return Ok(None),
                 0 => io_bail!("unexpected EOF"),
                 got => buf = &mut buf[got..],
             }
