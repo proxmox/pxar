@@ -159,6 +159,7 @@ enum State {
     Begin,
     Default,
     InPayload { offset: u64 },
+    InGoodbyeTable,
     InDirectory,
     Eof,
 }
@@ -224,6 +225,17 @@ impl<I: SeqRead> DecoderImpl<I> {
                     self.skip_entry(offset).await?;
                     self.read_next_item().await?;
                 }
+                State::InGoodbyeTable => {
+                    self.skip_entry(0).await?;
+                    if self.path_lengths.pop().is_some() {
+                        self.state = State::Default;
+                        // and move on:
+                        continue;
+                    }
+                    self.state = State::Eof;
+                    // early out:
+                    return Ok(None);
+                }
                 State::InDirectory => {
                     // We're at the next FILENAME or GOODBYE item.
                 }
@@ -232,21 +244,14 @@ impl<I: SeqRead> DecoderImpl<I> {
             match self.current_header.htype {
                 format::PXAR_FILENAME => return self.handle_file_entry().await,
                 format::PXAR_GOODBYE => {
+                    self.state = State::InGoodbyeTable;
+
                     if self.with_goodbye_tables {
                         self.entry.kind = EntryKind::GoodbyeTable;
-                        self.state = State::InPayload { offset: 0 };
                         return Ok(Some(self.entry.take()));
-                    }
-
-                    self.skip_entry(0).await?;
-                    if self.path_lengths.pop().is_some() {
-                        self.state = State::Default;
-                        // and move on:
-                        continue;
                     } else {
-                        self.state = State::Eof;
-                        // early out:
-                        return Ok(None);
+                        // go up to goodbye table handling
+                        continue;
                     }
                 }
                 h => io_bail!(
