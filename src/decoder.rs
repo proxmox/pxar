@@ -253,8 +253,12 @@ impl<I: SeqRead> DecoderImpl<I> {
                     self.state = State::InGoodbyeTable;
 
                     if self.with_goodbye_tables {
-                        self.entry.kind = EntryKind::GoodbyeTable;
-                        return Ok(Some(self.entry.take()));
+                        self.entry.clear_data();
+                        return Ok(Some(Entry {
+                            path: PathBuf::new(),
+                            metadata: Metadata::default(),
+                            kind: EntryKind::GoodbyeTable,
+                        }));
                     } else {
                         // go up to goodbye table handling
                         continue;
