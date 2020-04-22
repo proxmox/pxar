@@ -101,6 +101,18 @@ impl Metadata {
         self.stat.is_regular_file()
     }
 
+    /// Check whether this is a named pipe (FIFO).
+    #[inline]
+    pub fn is_fifo(&self) -> bool {
+        self.stat.is_fifo()
+    }
+
+    /// Check whether this is a named socket.
+    #[inline]
+    pub fn is_socket(&self) -> bool {
+        self.stat.is_socket()
+    }
+
     /// Get the mtime as duration since the epoch.
     pub fn mtime_as_duration(&self) -> std::time::Duration {
         self.stat.mtime_as_duration()
@@ -155,6 +167,12 @@ pub enum EntryKind {
 
     /// Device node.
     Device(format::Device),
+
+    /// Named unix socket.
+    Socket,
+
+    /// Named pipe.
+    Fifo,
 
     /// Regular file.
     File { size: u64, offset: Option<u64> },

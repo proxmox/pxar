@@ -198,6 +198,16 @@ impl Entry {
     pub fn is_regular_file(&self) -> bool {
         (self.mode & mode::IFMT) == mode::IFREG
     }
+
+    /// Check whether this is a named pipe (FIFO).
+    pub fn is_fifo(&self) -> bool {
+        (self.mode & mode::IFMT) == mode::IFIFO
+    }
+
+    /// Check whether this is a named socket.
+    pub fn is_socket(&self) -> bool {
+        (self.mode & mode::IFMT) == mode::IFSOCK
+    }
 }
 
 impl From<&std::fs::Metadata> for Entry {

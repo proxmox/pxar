@@ -158,7 +158,13 @@ pub(crate) struct DecoderImpl<T> {
 enum State {
     Begin,
     Default,
-    InPayload { offset: u64 },
+    InPayload {
+        offset: u64,
+    },
+
+    /// file entries with no data (fifo, socket)
+    InSpecialFile,
+
     InGoodbyeTable,
     InDirectory,
     Eof,
@@ -241,6 +247,11 @@ impl<I: SeqRead> DecoderImpl<I> {
                     // We left the directory, now keep going in our parent.
                     self.state = State::Default;
                     continue;
+                }
+                State::InSpecialFile => {
+                    self.entry.clear_data();
+                    self.state = State::InDirectory;
+                    self.entry.kind = EntryKind::Directory;
                 }
                 State::InDirectory => {
                     // We're at the next FILENAME or GOODBYE item.
@@ -469,9 +480,21 @@ impl<I: SeqRead> DecoderImpl<I> {
                 return Ok(ItemResult::Entry);
             }
             format::PXAR_FILENAME | format::PXAR_GOODBYE => {
-                self.state = State::InDirectory;
-                self.entry.kind = EntryKind::Directory;
-                return Ok(ItemResult::Entry);
+                if self.entry.metadata.is_fifo() {
+                    self.state = State::InSpecialFile;
+                    self.entry.kind = EntryKind::Fifo;
+                    return Ok(ItemResult::Entry);
+                } else if self.entry.metadata.is_socket() {
+                    self.state = State::InSpecialFile;
+                    self.entry.kind = EntryKind::Socket;
+                    return Ok(ItemResult::Entry);
+                } else {
+                    // As a shortcut this is copy-pasted to `next_do`'s `InSpecialFile` case.
+                    // Keep in mind when editing this!
+                    self.state = State::InDirectory;
+                    self.entry.kind = EntryKind::Directory;
+                    return Ok(ItemResult::Entry);
+                }
             }
             _ => io_bail!("unexpected entry type: {:x}", self.current_header.htype),
         }
