@@ -247,7 +247,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         match self.state.encode_error {
             Some(EncodeError::IncompleteFile) => io_bail!("incomplete file"),
             Some(EncodeError::IncompleteDirectory) => io_bail!("directory not finalized"),
-            None => Ok(())
+            None => Ok(()),
         }
     }
 
@@ -348,8 +348,12 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         target: &Path,
         htype: u64,
     ) -> io::Result<()> {
-        self.add_file_entry(metadata, file_name, htype, target.as_os_str().as_bytes())
-            .await
+        self.add_file_entry(
+            metadata,
+            file_name,
+            Some((htype, target.as_os_str().as_bytes())),
+        )
+        .await
     }
 
     pub async fn add_device(
@@ -358,6 +362,10 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         file_name: &Path,
         device: format::Device,
     ) -> io::Result<()> {
+        if !metadata.is_device() {
+            io_bail!("entry added via add_device must have a device mode in its metadata");
+        }
+
         let device = device.to_le();
         let device = unsafe {
             std::slice::from_raw_parts(
@@ -365,16 +373,31 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
                 size_of::<format::Device>(),
             )
         };
-        self.add_file_entry(metadata, file_name, format::PXAR_DEVICE, device)
+        self.add_file_entry(metadata, file_name, Some((format::PXAR_DEVICE, device)))
             .await
+    }
+
+    pub async fn add_fifo(&mut self, metadata: &Metadata, file_name: &Path) -> io::Result<()> {
+        if !metadata.is_fifo() {
+            io_bail!("entry added via add_device must be of type fifo in its metadata");
+        }
+
+        self.add_file_entry(metadata, file_name, None).await
+    }
+
+    pub async fn add_socket(&mut self, metadata: &Metadata, file_name: &Path) -> io::Result<()> {
+        if !metadata.is_socket() {
+            io_bail!("entry added via add_device must be of type socket in its metadata");
+        }
+
+        self.add_file_entry(metadata, file_name, None).await
     }
 
     async fn add_file_entry(
         &mut self,
         metadata: &Metadata,
         file_name: &Path,
-        htype: u64,
-        entry_data: &[u8],
+        entry_htype_data: Option<(u64, &[u8])>,
     ) -> io::Result<()> {
         self.check()?;
 
@@ -383,9 +406,11 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         let file_name = file_name.as_os_str().as_bytes();
 
         self.start_file_do(metadata, file_name).await?;
-        (&mut self.output as &mut dyn SeqWrite)
-            .seq_write_pxar_entry_zero(htype, entry_data)
-            .await?;
+        if let Some((htype, entry_data)) = entry_htype_data {
+            (&mut self.output as &mut dyn SeqWrite)
+                .seq_write_pxar_entry_zero(htype, entry_data)
+                .await?;
+        }
 
         let end_offset = (&mut self.output as &mut dyn SeqWrite).position().await?;
 

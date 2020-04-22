@@ -148,6 +148,24 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
     ) -> io::Result<()> {
         poll_result_once(self.inner.add_device(metadata, file_name.as_ref(), device))
     }
+
+    /// Add a fifo node to the archive.
+    pub fn add_fifo<P: AsRef<Path>>(
+        &mut self,
+        metadata: &Metadata,
+        file_name: P,
+    ) -> io::Result<()> {
+        poll_result_once(self.inner.add_fifo(metadata, file_name.as_ref()))
+    }
+
+    /// Add a socket node to the archive.
+    pub fn add_socket<P: AsRef<Path>>(
+        &mut self,
+        metadata: &Metadata,
+        file_name: P,
+    ) -> io::Result<()> {
+        poll_result_once(self.inner.add_socket(metadata, file_name.as_ref()))
+    }
 }
 
 #[repr(transparent)]

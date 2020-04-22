@@ -167,6 +167,24 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
             .add_device(metadata, file_name.as_ref(), device)
             .await
     }
+
+    /// Add a device node to the archive.
+    pub async fn add_fifo<P: AsRef<Path>>(
+        &mut self,
+        metadata: &Metadata,
+        file_name: P,
+    ) -> io::Result<()> {
+        self.inner.add_fifo(metadata, file_name.as_ref()).await
+    }
+
+    /// Add a device node to the archive.
+    pub async fn add_socket<P: AsRef<Path>>(
+        &mut self,
+        metadata: &Metadata,
+        file_name: P,
+    ) -> io::Result<()> {
+        self.inner.add_socket(metadata, file_name.as_ref()).await
+    }
 }
 
 #[repr(transparent)]
