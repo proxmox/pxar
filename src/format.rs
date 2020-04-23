@@ -363,7 +363,7 @@ pub struct FCaps {
     pub data: Vec<u8>,
 }
 
-#[derive(Clone, Debug, Endian)]
+#[derive(Clone, Copy, Debug, Endian)]
 #[repr(C)]
 pub struct QuotaProjectId {
     pub projid: u64,
