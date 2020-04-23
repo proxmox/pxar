@@ -8,9 +8,10 @@ bitflags::bitflags! {
     /// ACL permission bits.
     #[derive(Endian)]
     pub struct Permissions: u64 {
-        const PXAR_ACL_PERMISSION_READ = 4;
-        const PXAR_ACL_PERMISSION_WRITE = 2;
-        const PXAR_ACL_PERMISSION_EXECUTE = 1;
+        const READ = 4;
+        const WRITE = 2;
+        const EXECUTE = 1;
+        const NO_MASK = std::u64::MAX;
     }
 }
 
