@@ -77,6 +77,18 @@ impl From<std::fs::Metadata> for Metadata {
 
 /// Convenience helpers.
 impl Metadata {
+    /// Get the file type (`mode & mode::IFMT`).
+    #[inline]
+    pub fn file_type(&self) -> u64 {
+        self.stat.file_type()
+    }
+
+    /// Get the file mode bits (`mode & !mode::IFMT`).
+    #[inline]
+    pub fn file_mode(&self) -> u64 {
+        self.stat.file_mode()
+    }
+
     /// Check whether this is a directory.
     #[inline]
     pub fn is_dir(&self) -> bool {

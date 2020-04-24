@@ -178,6 +178,16 @@ impl Entry {
 
 /// Convenience methods.
 impl Entry {
+    /// Get the file type (`mode & mode::IFMT`).
+    pub fn file_type(&self) -> u64 {
+        self.mode & mode::IFMT
+    }
+
+    /// Get the file mode bits (`mode & !mode::IFMT`).
+    pub fn file_mode(&self) -> u64 {
+        self.mode & !mode::IFMT
+    }
+
     /// Check whether this is a directory.
     pub fn is_dir(&self) -> bool {
         (self.mode & mode::IFMT) == mode::IFDIR
