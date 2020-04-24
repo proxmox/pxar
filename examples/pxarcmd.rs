@@ -1,14 +1,12 @@
 use std::fs::File;
 use std::io::{self, Read, Write};
 use std::os::unix::ffi::OsStrExt;
-use std::os::unix::fs::{MetadataExt, PermissionsExt};
-use std::path::Path;
 
-use failure::{bail, format_err, Error};
+use anyhow::{bail, format_err, Error};
 
 use pxar::accessor::Accessor;
 use pxar::encoder::{Encoder, SeqWrite};
-use pxar::{Metadata, Stat};
+use pxar::Metadata;
 
 fn main() -> Result<(), Error> {
     let mut args = std::env::args_os();
@@ -78,16 +76,9 @@ fn cmd_create(mut args: std::env::ArgsOs) -> Result<(), Error> {
 
     let mut encoder = Encoder::create(file, &meta)?;
     add_directory(&mut encoder, dir)?;
-    encoder.finish();
+    encoder.finish()?;
 
     Ok(())
-}
-
-fn open_file<P: AsRef<Path>>(path: P) -> io::Result<(File, u64, Metadata)> {
-    let file = File::open(path.as_ref())?;
-    let meta = file.metadata()?;
-    let file_size = meta.len();
-    Ok((file, file_size, meta.into()))
 }
 
 fn add_directory<'a, T: SeqWrite + 'a>(
@@ -109,7 +100,7 @@ fn add_directory<'a, T: SeqWrite + 'a>(
         if file_type.is_dir() {
             let mut dir = encoder.create_directory(file_name, &meta)?;
             add_directory(&mut dir, std::fs::read_dir(file.path())?)?;
-            dir.finish();
+            dir.finish()?;
         } else if file_type.is_symlink() {
             todo!("symlink handling");
         } else if file_type.is_file() {

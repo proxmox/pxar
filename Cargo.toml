@@ -17,7 +17,7 @@ bitflags = "1.2.1"
 endian_trait = { version = "0.6", features = ["arrays"] }
 siphasher = "0.3"
 
-failure = { version = "0.1", optional = true }
+anyhow = { version = "1.0", optional = true }
 futures = { version = "0.3.1", optional = true }
 tokio = { version = "0.2.10", optional = true, default-features = false }
 
@@ -30,7 +30,7 @@ tokio-fs = [ "tokio-io", "tokio/fs" ]
 full = [ "tokio-fs", "futures-io" ]
 
 async-example = [
-    "failure",
+    "anyhow",
     "futures-io",
     "tokio-io",
     "tokio-fs",
