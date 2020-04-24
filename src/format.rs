@@ -6,7 +6,7 @@
 //! item data.
 
 use std::cmp::Ordering;
-use std::ffi::OsStr;
+use std::ffi::{CStr, OsStr};
 use std::io;
 use std::mem::size_of;
 use std::os::unix::ffi::OsStrExt;
@@ -310,8 +310,10 @@ impl XAttr {
         }
     }
 
-    pub fn name(&self) -> &[u8] {
-        &self.data[..self.name_len]
+    pub fn name(&self) -> &CStr {
+        unsafe {
+            CStr::from_bytes_with_nul_unchecked(&self.data[..self.name_len+1])
+        }
     }
 
     pub fn value(&self) -> &[u8] {
