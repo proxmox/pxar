@@ -38,3 +38,7 @@ async-example = [
     "tokio/io-driver",
     "tokio/macros",
 ]
+
+[dev-dependencies]
+libc = "0.2"
+anyhow = "1.0"

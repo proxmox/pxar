@@ -321,9 +321,7 @@ impl XAttr {
     }
 
     pub fn name(&self) -> &CStr {
-        unsafe {
-            CStr::from_bytes_with_nul_unchecked(&self.data[..self.name_len+1])
-        }
+        unsafe { CStr::from_bytes_with_nul_unchecked(&self.data[..self.name_len + 1]) }
     }
 
     pub fn value(&self) -> &[u8] {
@@ -367,6 +365,26 @@ impl Device {
          (self.minor & 0x0000_00ff) |
         ((self.minor & 0xffff_ff00) << 12)
     }
+
+    /// Get a `Device` from a `dev_t` value.
+    #[rustfmt::skip]
+    pub fn from_dev_t(dev: u64) -> Self {
+        // see to_dev_t
+        Self {
+            major: (dev >>  8) & 0x0000_0fff |
+                   (dev >> 32) & 0xffff_f000,
+            minor:  dev        & 0x0000_00ff |
+                   (dev >> 12) & 0xffff_ff00,
+        }
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+#[test]
+fn test_linux_devices() {
+    let c_dev = unsafe { ::libc::makedev(0xabcd_1234, 0xdcba_5678) };
+    let dev = Device::from_dev_t(c_dev);
+    assert_eq!(dev.to_dev_t(), c_dev);
 }
 
 #[derive(Clone, Debug)]
