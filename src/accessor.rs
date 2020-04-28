@@ -7,6 +7,7 @@ use std::ops::Range;
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use endian_trait::Endian;
@@ -20,10 +21,13 @@ use crate::{Entry, EntryKind};
 
 #[doc(hidden)]
 pub mod aio;
+pub mod cache;
 pub mod sync;
 
 #[doc(inline)]
 pub use sync::{Accessor, DirEntry, Directory, FileEntry, ReadDir};
+
+use cache::Cache;
 
 /// Random access read implementation.
 pub trait ReadAt {
@@ -96,10 +100,22 @@ impl<'a> ReadAt for &(dyn ReadAt + 'a) {
     }
 }
 
+struct Caches {
+    /// The goodbye table cache maps goodbye table offsets to cache entries.
+    gbt_cache: Option<Arc<dyn Cache<u64, [GoodbyeItem]> + Send + Sync>>,
+}
+
+impl Default for Caches {
+    fn default() -> Self {
+        Self { gbt_cache: None }
+    }
+}
+
 /// The random access state machine implementation.
 pub(crate) struct AccessorImpl<T> {
     input: T,
     size: u64,
+    caches: Arc<Caches>,
 }
 
 impl<T: ReadAt> AccessorImpl<T> {
@@ -107,17 +123,34 @@ impl<T: ReadAt> AccessorImpl<T> {
         if size < (size_of::<GoodbyeItem>() as u64) {
             io_bail!("too small to contain a pxar archive");
         }
-        Ok(Self { input, size })
+
+        Ok(Self {
+            input,
+            size,
+            caches: Arc::new(Caches::default()),
+        })
     }
 
     pub async fn open_root_ref<'a>(&'a self) -> io::Result<DirectoryImpl<&'a dyn ReadAt>> {
-        DirectoryImpl::open_at_end(&self.input as &dyn ReadAt, self.size, "/".into()).await
+        DirectoryImpl::open_at_end(
+            &self.input as &dyn ReadAt,
+            self.size,
+            "/".into(),
+            Arc::clone(&self.caches),
+        )
+        .await
     }
 }
 
 impl<T: Clone + ReadAt> AccessorImpl<T> {
     pub async fn open_root(&self) -> io::Result<DirectoryImpl<T>> {
-        DirectoryImpl::open_at_end(self.input.clone(), self.size, "/".into()).await
+        DirectoryImpl::open_at_end(
+            self.input.clone(),
+            self.size,
+            "/".into(),
+            Arc::clone(&self.caches),
+        )
+        .await
     }
 }
 
@@ -127,16 +160,18 @@ pub(crate) struct DirectoryImpl<T> {
     entry_ofs: u64,
     goodbye_ofs: u64,
     size: u64,
-    table: Box<[GoodbyeItem]>,
+    table: Arc<[GoodbyeItem]>,
     path: PathBuf,
+    caches: Arc<Caches>,
 }
 
 impl<T: Clone + ReadAt> DirectoryImpl<T> {
     /// Open a directory ending at the specified position.
-    pub(crate) async fn open_at_end(
+    async fn open_at_end(
         input: T,
         end_offset: u64,
         path: PathBuf,
+        caches: Arc<Caches>,
     ) -> io::Result<DirectoryImpl<T>> {
         let tail = Self::read_tail_entry(&input, end_offset).await?;
 
@@ -153,13 +188,19 @@ impl<T: Clone + ReadAt> DirectoryImpl<T> {
         let entry_ofs = goodbye_ofs - tail.offset;
         let size = end_offset - entry_ofs;
 
+        let table: Option<Arc<[GoodbyeItem]>> = caches
+            .gbt_cache
+            .as_ref()
+            .and_then(|cache| cache.fetch(goodbye_ofs));
+
         let mut this = Self {
             input,
             entry_ofs,
             goodbye_ofs,
             size,
-            table: Box::new([]),
+            table: table.as_ref().map_or_else(|| Arc::new([]), Arc::clone),
             path,
+            caches,
         };
 
         // sanity check:
@@ -167,13 +208,18 @@ impl<T: Clone + ReadAt> DirectoryImpl<T> {
             io_bail!("invalid goodbye table size: {}", this.table_size());
         }
 
-        this.table = this.load_table().await?;
+        if table.is_none() {
+            this.table = this.load_table().await?;
+            if let Some(ref cache) = this.caches.gbt_cache {
+                cache.insert(goodbye_ofs, Arc::clone(&this.table));
+            }
+        }
 
         Ok(this)
     }
 
     /// Load the entire goodbye table:
-    async fn load_table(&self) -> io::Result<Box<[GoodbyeItem]>> {
+    async fn load_table(&self) -> io::Result<Arc<[GoodbyeItem]>> {
         let len = self.len();
         let mut data = Vec::with_capacity(self.len());
         unsafe {
@@ -187,7 +233,7 @@ impl<T: Clone + ReadAt> DirectoryImpl<T> {
                 .await?;
             drop(slice);
         }
-        Ok(data.into_boxed_slice())
+        Ok(Arc::from(data))
     }
 
     #[inline]
@@ -279,6 +325,7 @@ impl<T: Clone + ReadAt> DirectoryImpl<T> {
             input: self.input.clone(),
             entry,
             end_offset: self.end_offset(),
+            caches: Arc::clone(&self.caches),
         })
     }
 
@@ -381,6 +428,7 @@ impl<T: Clone + ReadAt> DirectoryImpl<T> {
             dir: self,
             file_name,
             entry_range,
+            caches: Arc::clone(&self.caches),
         })
     }
 
@@ -421,6 +469,7 @@ pub(crate) struct FileEntryImpl<T: Clone + ReadAt> {
     input: T,
     entry: Entry,
     end_offset: u64,
+    caches: Arc<Caches>,
 }
 
 impl<T: Clone + ReadAt> FileEntryImpl<T> {
@@ -429,8 +478,13 @@ impl<T: Clone + ReadAt> FileEntryImpl<T> {
             io_bail!("enter_directory() on a non-directory");
         }
 
-        DirectoryImpl::open_at_end(self.input.clone(), self.end_offset, self.entry.path.clone())
-            .await
+        DirectoryImpl::open_at_end(
+            self.input.clone(),
+            self.end_offset,
+            self.entry.path.clone(),
+            Arc::clone(&self.caches),
+        )
+        .await
     }
 
     pub async fn contents(&self) -> io::Result<FileContentsImpl<T>> {
@@ -506,6 +560,7 @@ pub(crate) struct DirEntryImpl<'a, T: Clone + ReadAt> {
     dir: &'a DirectoryImpl<T>,
     file_name: PathBuf,
     entry_range: Range<u64>,
+    caches: Arc<Caches>,
 }
 
 impl<'a, T: Clone + ReadAt> DirEntryImpl<'a, T> {
@@ -524,6 +579,7 @@ impl<'a, T: Clone + ReadAt> DirEntryImpl<'a, T> {
             input: self.dir.input.clone(),
             entry,
             end_offset,
+            caches: Arc::clone(&self.caches),
         })
     }
 }
