@@ -4,10 +4,12 @@ use std::io;
 use std::os::unix::fs::FileExt;
 use std::path::Path;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::{Context, Poll};
 
-use crate::accessor::{self, ReadAt};
+use crate::accessor::{self, cache::Cache, ReadAt};
 use crate::decoder::Decoder;
+use crate::format::GoodbyeItem;
 use crate::util::poll_result_once;
 use crate::Entry;
 
@@ -82,6 +84,14 @@ impl<T: ReadAt> Accessor<T> {
         Ok(Directory::new(poll_result_once(
             self.inner.open_root_ref(),
         )?))
+    }
+
+    pub fn set_goodbye_table_cache<C>(&mut self, cache: Option<C>)
+    where
+        C: Cache<u64, [GoodbyeItem]> + Send + Sync + 'static,
+    {
+        self.inner
+            .set_goodbye_table_cache(cache.map(|cache| Arc::new(cache) as _))
     }
 }
 

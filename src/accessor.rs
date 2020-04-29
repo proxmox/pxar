@@ -100,6 +100,7 @@ impl<'a> ReadAt for &(dyn ReadAt + 'a) {
     }
 }
 
+#[derive(Clone)]
 struct Caches {
     /// The goodbye table cache maps goodbye table offsets to cache entries.
     gbt_cache: Option<Arc<dyn Cache<u64, [GoodbyeItem]> + Send + Sync>>,
@@ -139,6 +140,17 @@ impl<T: ReadAt> AccessorImpl<T> {
             Arc::clone(&self.caches),
         )
         .await
+    }
+
+    pub fn set_goodbye_table_cache(
+        &mut self,
+        cache: Option<Arc<dyn Cache<u64, [GoodbyeItem]> + Send + Sync>>,
+    ) {
+        let new_caches = Arc::new(Caches {
+            gbt_cache: cache,
+            ..*self.caches
+        });
+        self.caches = new_caches;
     }
 }
 
