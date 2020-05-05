@@ -1,6 +1,7 @@
 //! Blocking `pxar` random access handling.
 
 use std::io;
+use std::ops::Range;
 use std::os::unix::fs::FileExt;
 use std::path::Path;
 use std::pin::Pin;
@@ -98,6 +99,11 @@ impl<T: ReadAt> Accessor<T> {
 impl<T: Clone + ReadAt> Accessor<T> {
     pub fn open_root(&self) -> io::Result<Directory<T>> {
         Ok(Directory::new(poll_result_once(self.inner.open_root())?))
+    }
+
+    /// Allow opening a directory at a specified offset.
+    pub async unsafe fn open_dir_at_end(&self, offset: u64) -> io::Result<Directory<T>> {
+        Ok(Directory::new(poll_result_once(self.inner.open_dir_at_end(offset))?))
     }
 }
 
@@ -217,6 +223,12 @@ impl<T: Clone + ReadAt> FileEntry<T> {
     pub fn entry(&self) -> &Entry {
         &self.inner.entry()
     }
+
+    /// Exposed for raw by-offset access methods (use with `open_dir_at_end`).
+    #[inline]
+    pub fn entry_range(&self) -> Range<u64> {
+        self.inner.entry_range()
+    }
 }
 
 impl<T: Clone + ReadAt> std::ops::Deref for FileEntry<T> {
@@ -282,6 +294,13 @@ impl<'a, T: Clone + ReadAt> DirEntry<'a, T> {
     /// so only the file name is available here, while the attributes still need to be decoded.
     pub fn decode_entry(&self) -> io::Result<FileEntry<T>> {
         poll_result_once(self.inner.decode_entry()).map(|inner| FileEntry { inner })
+    }
+
+
+    /// Exposed for raw by-offset access methods.
+    #[inline]
+    pub fn entry_range(&self) -> Range<u64> {
+        self.inner.entry_range()
     }
 }
 

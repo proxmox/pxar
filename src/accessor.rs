@@ -163,6 +163,17 @@ impl<T: Clone + ReadAt> AccessorImpl<T> {
         )
         .await
     }
+
+    /// Allow opening a directory at a specified offset.
+    pub async unsafe fn open_dir_at_end(&self, offset: u64) -> io::Result<DirectoryImpl<T>> {
+        DirectoryImpl::open_at_end(
+            self.input.clone(),
+            offset,
+            "/".into(),
+            Arc::clone(&self.caches),
+        )
+        .await
+    }
 }
 
 /// The directory random-access state machine implementation.
@@ -335,7 +346,7 @@ impl<T: Clone + ReadAt> DirectoryImpl<T> {
         Ok(FileEntryImpl {
             input: self.input.clone(),
             entry,
-            end_offset: self.end_offset(),
+            entry_range: self.entry_range(),
             caches: Arc::clone(&self.caches),
         })
     }
@@ -479,7 +490,7 @@ impl<T: Clone + ReadAt> DirectoryImpl<T> {
 pub(crate) struct FileEntryImpl<T: Clone + ReadAt> {
     input: T,
     entry: Entry,
-    end_offset: u64,
+    entry_range: Range<u64>,
     caches: Arc<Caches>,
 }
 
@@ -491,7 +502,7 @@ impl<T: Clone + ReadAt> FileEntryImpl<T> {
 
         DirectoryImpl::open_at_end(
             self.input.clone(),
-            self.end_offset,
+            self.entry_range.end,
             self.entry.path.clone(),
             Arc::clone(&self.caches),
         )
@@ -522,6 +533,12 @@ impl<T: Clone + ReadAt> FileEntryImpl<T> {
     #[inline]
     pub fn entry(&self) -> &Entry {
         &self.entry
+    }
+
+    /// Exposed for raw by-offset access methods (use with `open_dir_at_end`).
+    #[inline]
+    pub fn entry_range(&self) -> Range<u64> {
+        self.entry_range.clone()
     }
 }
 
@@ -580,7 +597,6 @@ impl<'a, T: Clone + ReadAt> DirEntryImpl<'a, T> {
     }
 
     async fn decode_entry(&self) -> io::Result<FileEntryImpl<T>> {
-        let end_offset = self.entry_range.end;
         let (entry, _decoder) = self
             .dir
             .decode_one_entry(self.entry_range.clone(), Some(&self.file_name))
@@ -589,9 +605,15 @@ impl<'a, T: Clone + ReadAt> DirEntryImpl<'a, T> {
         Ok(FileEntryImpl {
             input: self.dir.input.clone(),
             entry,
-            end_offset,
+            entry_range: self.entry_range(),
             caches: Arc::clone(&self.caches),
         })
+    }
+
+    /// Exposed for raw by-offset access methods.
+    #[inline]
+    pub fn entry_range(&self) -> Range<u64> {
+        self.entry_range.clone()
     }
 }
 
