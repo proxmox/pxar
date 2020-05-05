@@ -94,8 +94,7 @@ impl<'a> ReadAt for &(dyn ReadAt + 'a) {
         offset: u64,
     ) -> Poll<io::Result<usize>> {
         unsafe {
-            self.map_unchecked(|this| *this)
-                .poll_read_at(cx, buf, offset)
+            Pin::new_unchecked(&**self).poll_read_at(cx, buf, offset)
         }
     }
 }
