@@ -102,7 +102,7 @@ impl<T: Clone + ReadAt> Accessor<T> {
     }
 
     /// Allow opening a directory at a specified offset.
-    pub async unsafe fn open_dir_at_end(&self, offset: u64) -> io::Result<Directory<T>> {
+    pub unsafe fn open_dir_at_end(&self, offset: u64) -> io::Result<Directory<T>> {
         Ok(Directory::new(poll_result_once(self.inner.open_dir_at_end(offset))?))
     }
 }
