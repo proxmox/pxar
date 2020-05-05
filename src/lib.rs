@@ -317,4 +317,12 @@ impl Entry {
             _ => false,
         }
     }
+
+    /// Get the file size if this is a regular file, or `None`.
+    pub fn file_size(&self) -> Option<u64> {
+        match self.kind {
+            EntryKind::File { size, .. } => Some(size),
+            _ => None,
+        }
+    }
 }
