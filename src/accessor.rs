@@ -19,7 +19,6 @@ use crate::poll_fn::poll_fn;
 use crate::util;
 use crate::{Entry, EntryKind};
 
-#[doc(hidden)]
 pub mod aio;
 pub mod cache;
 pub mod sync;
@@ -153,6 +152,18 @@ impl<T: ReadAt> AccessorImpl<T> {
     }
 }
 
+async fn get_decoder<T: ReadAt>(
+    input: T,
+    entry_range: Range<u64>,
+    path: PathBuf,
+) -> io::Result<DecoderImpl<SeqReadAtAdapter<T>>> {
+    Ok(DecoderImpl::new_full(
+        SeqReadAtAdapter::new(input, entry_range),
+        path,
+    )
+    .await?)
+}
+
 impl<T: Clone + ReadAt> AccessorImpl<T> {
     pub async fn open_root(&self) -> io::Result<DirectoryImpl<T>> {
         DirectoryImpl::open_at_end(
@@ -173,6 +184,29 @@ impl<T: Clone + ReadAt> AccessorImpl<T> {
             Arc::clone(&self.caches),
         )
         .await
+    }
+
+    /// Allow opening a regular file from a specified range.
+    pub async unsafe fn open_file_at_range(
+        &self,
+        range: Range<u64>,
+    ) -> io::Result<FileEntryImpl<T>> {
+        let mut decoder = get_decoder(self.input.clone(), range.clone(), PathBuf::new()).await?;
+        let entry = decoder
+            .next()
+            .await
+            .ok_or_else(|| io_format_err!("unexpected EOF while decoding file entry"))??;
+        Ok(FileEntryImpl {
+            input: self.input.clone(),
+            entry,
+            entry_range: range,
+            caches: Arc::clone(&self.caches),
+        })
+    }
+
+    /// Allow opening arbitrary contents from a specific range.
+    pub unsafe fn open_contents_at_range(&self, range: Range<u64>) -> FileContentsImpl<T> {
+        FileContentsImpl::new(self.input.clone(), range)
     }
 }
 
@@ -314,14 +348,14 @@ impl<T: Clone + ReadAt> DirectoryImpl<T> {
         entry_range: Range<u64>,
         file_name: Option<&Path>,
     ) -> io::Result<DecoderImpl<SeqReadAtAdapter<T>>> {
-        Ok(DecoderImpl::new_full(
-            SeqReadAtAdapter::new(self.input.clone(), entry_range),
+        get_decoder(
+            self.input.clone(),
+            entry_range,
             match file_name {
                 None => self.path.clone(),
                 Some(file) => self.path.join(file),
             },
-        )
-        .await?)
+        ).await
     }
 
     async fn decode_one_entry(
@@ -509,7 +543,8 @@ impl<T: Clone + ReadAt> FileEntryImpl<T> {
         .await
     }
 
-    pub async fn contents(&self) -> io::Result<FileContentsImpl<T>> {
+    /// For use with unsafe accessor methods.
+    pub fn content_range(&self) -> io::Result<Option<Range<u64>>> {
         match self.entry.kind {
             EntryKind::File { offset: None, .. } => {
                 io_bail!("cannot open file, reader provided no offset")
@@ -517,11 +552,15 @@ impl<T: Clone + ReadAt> FileEntryImpl<T> {
             EntryKind::File {
                 size,
                 offset: Some(offset),
-            } => Ok(FileContentsImpl::new(
-                self.input.clone(),
-                offset..(offset + size),
-            )),
-            _ => io_bail!("not a file"),
+            } => Ok(Some(offset..(offset + size))),
+            _ => Ok(None),
+        }
+    }
+
+    pub async fn contents(&self) -> io::Result<FileContentsImpl<T>> {
+        match self.content_range()? {
+            Some(range) => Ok(FileContentsImpl::new(self.input.clone(), range)),
+            None => io_bail!("not a file"),
         }
     }
 

@@ -105,6 +105,21 @@ impl<T: Clone + ReadAt> Accessor<T> {
     pub unsafe fn open_dir_at_end(&self, offset: u64) -> io::Result<Directory<T>> {
         Ok(Directory::new(poll_result_once(self.inner.open_dir_at_end(offset))?))
     }
+
+    /// Allow opening a regular file from a specified range.
+    pub unsafe fn open_file_at_range(&self, range: Range<u64>) -> io::Result<FileEntry<T>> {
+        Ok(FileEntry {
+            inner: poll_result_once(self.inner.open_file_at_range(range))?,
+        })
+    }
+
+    /// Allow opening arbitrary contents from a specific range.
+    pub unsafe fn open_contents_at_range(&self, range: Range<u64>) -> FileContents<T> {
+        FileContents {
+            inner: self.inner.open_contents_at_range(range),
+            at: 0,
+        }
+    }
 }
 
 /// Adapter for FileExt readers.
@@ -205,6 +220,11 @@ impl<T: Clone + ReadAt> FileEntry<T> {
         Ok(Directory::new(poll_result_once(
             self.inner.enter_directory(),
         )?))
+    }
+
+    /// For use with unsafe accessor methods.
+    pub fn content_range(&self) -> io::Result<Option<Range<u64>>> {
+        self.inner.content_range()
     }
 
     pub fn contents(&self) -> io::Result<FileContents<T>> {
