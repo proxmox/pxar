@@ -375,7 +375,7 @@ impl<T: Clone + ReadAt> DirectoryImpl<T> {
         binary_tree_array::search_by(&self.table, start, skip, |i| hash.cmp(&i.hash))
     }
 
-    async fn lookup_self(&self) -> io::Result<FileEntryImpl<T>> {
+    pub async fn lookup_self(&self) -> io::Result<FileEntryImpl<T>> {
         let (entry, _decoder) = self.decode_one_entry(self.entry_range(), None).await?;
         Ok(FileEntryImpl {
             input: self.input.clone(),

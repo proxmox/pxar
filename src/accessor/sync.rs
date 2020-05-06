@@ -190,6 +190,15 @@ impl<T: Clone + ReadAt> Directory<T> {
         )?))
     }
 
+    /// Get a `FileEntry` referencing the directory itself.
+    ///
+    /// Helper function for our fuse implementation.
+    pub fn lookup_self(&self) -> io::Result<FileEntry<T>> {
+        Ok(FileEntry {
+            inner: poll_result_once(self.inner.lookup_self())?,
+        })
+    }
+
     /// Lookup an entry in a directory.
     pub fn lookup<P: AsRef<Path>>(&self, path: P) -> io::Result<Option<FileEntry<T>>> {
         if let Some(file_entry) = poll_result_once(self.inner.lookup(path.as_ref()))? {
