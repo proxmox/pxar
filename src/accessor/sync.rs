@@ -94,6 +94,12 @@ impl<T: ReadAt> Accessor<T> {
         self.inner
             .set_goodbye_table_cache(cache.map(|cache| Arc::new(cache) as _))
     }
+
+    /// Get the full archive size we're allowed to access.
+    #[inline]
+    pub fn size(&self) -> u64 {
+        self.inner.size()
+    }
 }
 
 impl<T: Clone + ReadAt> Accessor<T> {

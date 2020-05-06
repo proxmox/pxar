@@ -130,6 +130,10 @@ impl<T: ReadAt> AccessorImpl<T> {
         })
     }
 
+    pub fn size(&self) -> u64 {
+        self.size
+    }
+
     pub async fn open_root_ref<'a>(&'a self) -> io::Result<DirectoryImpl<&'a dyn ReadAt>> {
         DirectoryImpl::open_at_end(
             &self.input as &dyn ReadAt,
