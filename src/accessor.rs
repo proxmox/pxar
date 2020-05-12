@@ -92,9 +92,7 @@ impl<'a> ReadAt for &(dyn ReadAt + 'a) {
         buf: &mut [u8],
         offset: u64,
     ) -> Poll<io::Result<usize>> {
-        unsafe {
-            Pin::new_unchecked(&**self).poll_read_at(cx, buf, offset)
-        }
+        unsafe { Pin::new_unchecked(&**self).poll_read_at(cx, buf, offset) }
     }
 }
 
@@ -161,11 +159,7 @@ async fn get_decoder<T: ReadAt>(
     entry_range: Range<u64>,
     path: PathBuf,
 ) -> io::Result<DecoderImpl<SeqReadAtAdapter<T>>> {
-    Ok(DecoderImpl::new_full(
-        SeqReadAtAdapter::new(input, entry_range),
-        path,
-    )
-    .await?)
+    Ok(DecoderImpl::new_full(SeqReadAtAdapter::new(input, entry_range), path).await?)
 }
 
 impl<T: Clone + ReadAt> AccessorImpl<T> {
@@ -359,7 +353,8 @@ impl<T: Clone + ReadAt> DirectoryImpl<T> {
                 None => self.path.clone(),
                 Some(file) => self.path.join(file),
             },
-        ).await
+        )
+        .await
     }
 
     async fn decode_one_entry(
@@ -521,6 +516,10 @@ impl<T: Clone + ReadAt> DirectoryImpl<T> {
 
     pub fn read_dir(&self) -> ReadDirImpl<T> {
         ReadDirImpl::new(self, 0)
+    }
+
+    pub fn entry_count(&self) -> usize {
+        self.table.len()
     }
 }
 
@@ -692,6 +691,28 @@ impl<T: Clone + ReadAt> FileContentsImpl<T> {
         (&self.input as &dyn ReadAt)
             .read_at(buf, self.range.start + offset)
             .await
+    }
+}
+
+impl<T: Clone + ReadAt> ReadAt for FileContentsImpl<T> {
+    fn poll_read_at(
+        self: Pin<&Self>,
+        cx: &mut Context,
+        mut buf: &mut [u8],
+        offset: u64,
+    ) -> Poll<io::Result<usize>> {
+        let size = self.file_size();
+        if offset >= size {
+            return Poll::Ready(Ok(0));
+        }
+        let remaining = size - offset;
+
+        if remaining < buf.len() as u64 {
+            buf = &mut buf[..(remaining as usize)];
+        }
+
+        let offset = self.range.start + offset;
+        unsafe { self.map_unchecked(|this| &this.input) }.poll_read_at(cx, buf, offset)
     }
 }
 

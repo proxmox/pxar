@@ -109,7 +109,9 @@ impl<T: Clone + ReadAt> Accessor<T> {
 
     /// Allow opening a directory at a specified offset.
     pub unsafe fn open_dir_at_end(&self, offset: u64) -> io::Result<Directory<T>> {
-        Ok(Directory::new(poll_result_once(self.inner.open_dir_at_end(offset))?))
+        Ok(Directory::new(poll_result_once(
+            self.inner.open_dir_at_end(offset),
+        )?))
     }
 
     /// Allow opening a regular file from a specified range.
@@ -219,6 +221,12 @@ impl<T: Clone + ReadAt> Directory<T> {
         ReadDir {
             inner: self.inner.read_dir(),
         }
+    }
+
+    /// Get the number of entries in this directory.
+    #[inline]
+    pub fn entry_count(&self) -> usize {
+        self.inner.entry_count()
     }
 }
 
@@ -330,7 +338,6 @@ impl<'a, T: Clone + ReadAt> DirEntry<'a, T> {
     pub fn decode_entry(&self) -> io::Result<FileEntry<T>> {
         poll_result_once(self.inner.decode_entry()).map(|inner| FileEntry { inner })
     }
-
 
     /// Exposed for raw by-offset access methods.
     #[inline]
