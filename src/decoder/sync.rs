@@ -60,7 +60,7 @@ impl<T: SeqRead> Decoder<T> {
     }
 
     /// Get a reader for the contents of the current entry, if the entry has contents.
-    pub fn contents(&mut self) -> Option<Contents> {
+    pub fn contents(&mut self) -> Option<Contents<T>> {
         self.inner.content_reader().map(|inner| Contents { inner })
     }
 
@@ -104,11 +104,11 @@ impl<T: io::Read> SeqRead for StandardReader<T> {
     }
 }
 
-pub struct Contents<'a> {
-    inner: decoder::Contents<'a>,
+pub struct Contents<'a, T: SeqRead> {
+    inner: decoder::Contents<'a, T>,
 }
 
-impl<'a> io::Read for Contents<'a> {
+impl<'a, T: SeqRead> io::Read for Contents<'a, T> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         poll_result_once(super::seq_read(&mut self.inner, buf))
     }

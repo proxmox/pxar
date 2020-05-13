@@ -295,7 +295,7 @@ impl<I: SeqRead> DecoderImpl<I> {
         }
     }
 
-    pub fn content_reader<'a>(&'a mut self) -> Option<Contents<'a>> {
+    pub fn content_reader<'a>(&'a mut self) -> Option<Contents<'a, I>> {
         if let State::InPayload { offset } = &mut self.state {
             Some(Contents::new(
                 &mut self.input,
@@ -597,14 +597,14 @@ impl<I: SeqRead> DecoderImpl<I> {
     }
 }
 
-pub struct Contents<'a> {
-    input: &'a mut dyn SeqRead,
+pub struct Contents<'a, T: SeqRead> {
+    input: &'a mut T,
     at: &'a mut u64,
     len: u64,
 }
 
-impl<'a> Contents<'a> {
-    pub fn new(input: &'a mut dyn SeqRead, at: &'a mut u64, len: u64) -> Self {
+impl<'a, T: SeqRead> Contents<'a, T> {
+    pub fn new(input: &'a mut T, at: &'a mut u64, len: u64) -> Self {
         Self { input, at, len }
     }
 
@@ -614,7 +614,7 @@ impl<'a> Contents<'a> {
     }
 }
 
-impl<'a> SeqRead for Contents<'a> {
+impl<'a, T: SeqRead> SeqRead for Contents<'a, T> {
     fn poll_seq_read(
         mut self: Pin<&mut Self>,
         cx: &mut Context,
