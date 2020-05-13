@@ -12,7 +12,7 @@ use std::task::{Context, Poll};
 use endian_trait::Endian;
 
 use crate::binary_tree_array;
-use crate::decoder::SeqRead;
+use crate::decoder::{self, SeqRead};
 use crate::format::{self, GoodbyeItem};
 use crate::poll_fn::poll_fn;
 use crate::Metadata;
@@ -320,7 +320,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         let mut file = self.create_file(metadata, file_name, file_size).await?;
         let mut buf = crate::util::vec_new(4096);
         loop {
-            let got = content.seq_read(&mut buf).await?;
+            let got = decoder::seq_read(&mut *content, &mut buf).await?;
             if got == 0 {
                 break;
             } else {

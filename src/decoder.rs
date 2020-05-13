@@ -74,72 +74,76 @@ impl<'a> SeqRead for &mut (dyn SeqRead + 'a) {
     }
 }
 
-/// We do not want to bother with actual polling, so we implement `async fn` variants of the above
-/// on `dyn SeqRead`.
-///
-/// The reason why this is not an internal `SeqReadExt` trait like `AsyncReadExt` is simply that
-/// we'd then need to define all the `Future` types they return manually and explicitly. Since we
-/// have no use for them, all we want is the ability to use `async fn`...
-///
-/// The downside is that we need some `(&mut self.input as &mut dyn SeqRead)` casts in the
-/// decoder's code, but that's fine.
-impl<'a> dyn SeqRead + 'a {
-    /// awaitable version of `poll_position`.
-    pub async fn position(&mut self) -> Option<io::Result<u64>> {
-        poll_fn(|cx| unsafe { Pin::new_unchecked(&mut *self).poll_position(cx) }).await
-    }
+/// awaitable version of `poll_position`.
+pub(crate) async fn seq_read_position<T: SeqRead + ?Sized>(
+    input: &mut T,
+) -> Option<io::Result<u64>> {
+    poll_fn(|cx| unsafe { Pin::new_unchecked(&mut *input).poll_position(cx) }).await
+}
 
-    /// awaitable version of `poll_seq_read`.
-    pub async fn seq_read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        poll_fn(|cx| unsafe { Pin::new_unchecked(&mut *self).poll_seq_read(cx, buf) }).await
-    }
+/// awaitable version of `poll_seq_read`.
+pub(crate) async fn seq_read<T: SeqRead + ?Sized>(
+    input: &mut T,
+    buf: &mut [u8],
+) -> io::Result<usize> {
+    poll_fn(|cx| unsafe { Pin::new_unchecked(&mut *input).poll_seq_read(cx, buf) }).await
+}
 
-    /// `read_exact` - since that's what we _actually_ want most of the time, but with EOF handling
-    async fn seq_read_exact_or_eof(&mut self, mut buf: &mut [u8]) -> io::Result<Option<()>> {
-        let mut eof_ok = true;
-        while !buf.is_empty() {
-            match self.seq_read(buf).await? {
-                0 if eof_ok => return Ok(None),
-                0 => io_bail!("unexpected EOF"),
-                got => buf = &mut buf[got..],
-            }
-            eof_ok = false;
+/// `read_exact` - since that's what we _actually_ want most of the time, but with EOF handling
+async fn seq_read_exact_or_eof<T>(input: &mut T, mut buf: &mut [u8]) -> io::Result<Option<()>>
+where
+    T: SeqRead + ?Sized,
+{
+    let mut eof_ok = true;
+    while !buf.is_empty() {
+        match seq_read(&mut *input, buf).await? {
+            0 if eof_ok => return Ok(None),
+            0 => io_bail!("unexpected EOF"),
+            got => buf = &mut buf[got..],
         }
-        Ok(Some(()))
+        eof_ok = false;
     }
+    Ok(Some(()))
+}
 
-    /// `read_exact` - since that's what we _actually_ want most of the time.
-    async fn seq_read_exact(&mut self, buf: &mut [u8]) -> io::Result<()> {
-        match self.seq_read_exact_or_eof(buf).await? {
-            Some(()) => Ok(()),
-            None => io_bail!("unexpected eof"),
-        }
+/// `read_exact` - since that's what we _actually_ want most of the time.
+async fn seq_read_exact<T: SeqRead + ?Sized>(input: &mut T, buf: &mut [u8]) -> io::Result<()> {
+    match seq_read_exact_or_eof(input, buf).await? {
+        Some(()) => Ok(()),
+        None => io_bail!("unexpected eof"),
     }
+}
 
-    /// Helper to read into an allocated byte vector.
-    async fn seq_read_exact_data(&mut self, size: usize) -> io::Result<Vec<u8>> {
-        let mut data = util::vec_new(size);
-        self.seq_read_exact(&mut data[..]).await?;
-        Ok(data)
-    }
+/// Helper to read into an allocated byte vector.
+async fn seq_read_exact_data<T>(input: &mut T, size: usize) -> io::Result<Vec<u8>>
+where
+    T: SeqRead + ?Sized,
+{
+    let mut data = util::vec_new(size);
+    seq_read_exact(input, &mut data[..]).await?;
+    Ok(data)
+}
 
-    /// `seq_read_entry` with EOF handling
-    async fn seq_read_entry_or_eof<T: Endian>(&mut self) -> io::Result<Option<T>> {
-        let mut data = MaybeUninit::<T>::uninit();
-        let buf =
-            unsafe { std::slice::from_raw_parts_mut(data.as_mut_ptr() as *mut u8, size_of::<T>()) };
-        if self.seq_read_exact_or_eof(buf).await?.is_none() {
-            return Ok(None);
-        }
-        Ok(Some(unsafe { data.assume_init().from_le() }))
+/// `seq_read_entry` with EOF handling
+async fn seq_read_entry_or_eof<T, E>(input: &mut T) -> io::Result<Option<E>>
+where
+    T: SeqRead + ?Sized,
+    E: Endian,
+{
+    let mut data = MaybeUninit::<E>::uninit();
+    let buf =
+        unsafe { std::slice::from_raw_parts_mut(data.as_mut_ptr() as *mut u8, size_of::<E>()) };
+    if seq_read_exact_or_eof(input, buf).await?.is_none() {
+        return Ok(None);
     }
+    Ok(Some(unsafe { data.assume_init().from_le() }))
+}
 
-    /// Helper to read into an `Endian`-implementing `struct`.
-    async fn seq_read_entry<T: Endian>(&mut self) -> io::Result<T> {
-        self.seq_read_entry_or_eof()
-            .await?
-            .ok_or_else(|| io_format_err!("unexepcted EOF"))
-    }
+/// Helper to read into an `Endian`-implementing `struct`.
+async fn seq_read_entry<T: SeqRead + ?Sized, E: Endian>(input: &mut T) -> io::Result<E> {
+    seq_read_entry_or_eof(input)
+        .await?
+        .ok_or_else(|| io_format_err!("unexepcted EOF"))
 }
 
 /// The decoder state machine implementation.
@@ -350,8 +354,7 @@ impl<I: SeqRead> DecoderImpl<I> {
         }
 
         let entry: WithHeader<format::Entry> = {
-            let input: &mut dyn SeqRead = &mut self.input;
-            match input.seq_read_entry_or_eof().await? {
+            match seq_read_entry_or_eof(&mut self.input).await? {
                 None => return Ok(None),
                 Some(entry) => entry,
             }
@@ -398,9 +401,7 @@ impl<I: SeqRead> DecoderImpl<I> {
                 size_of_val(&self.current_header),
             )
         };
-        (&mut self.input as &mut dyn SeqRead)
-            .seq_read_exact(dest)
-            .await?;
+        seq_read_exact(&mut self.input, dest).await?;
         Ok(())
     }
 
@@ -468,10 +469,7 @@ impl<I: SeqRead> DecoderImpl<I> {
                 return Ok(ItemResult::Entry);
             }
             format::PXAR_PAYLOAD => {
-                let offset = (&mut self.input as &mut dyn SeqRead)
-                    .position()
-                    .await
-                    .transpose()?;
+                let offset = seq_read_position(&mut self.input).await.transpose()?;
                 self.entry.kind = EntryKind::File {
                     size: self.current_header.content_size(),
                     offset,
@@ -512,25 +510,19 @@ impl<I: SeqRead> DecoderImpl<I> {
         let mut len = self.current_header.content_size() - offset;
         let scratch = scratch_buffer();
         while len >= (scratch.len() as u64) {
-            (&mut self.input as &mut dyn SeqRead)
-                .seq_read_exact(scratch)
-                .await?;
+            seq_read_exact(&mut self.input, scratch).await?;
             len -= scratch.len() as u64;
         }
         let len = len as usize;
         if len > 0 {
-            (&mut self.input as &mut dyn SeqRead)
-                .seq_read_exact(&mut scratch[..len])
-                .await?;
+            seq_read_exact(&mut self.input, &mut scratch[..len]).await?;
         }
         Ok(())
     }
 
     async fn read_entry_as_bytes(&mut self) -> io::Result<Vec<u8>> {
         let size = usize::try_from(self.current_header.content_size()).map_err(io_err_other)?;
-        let data = (&mut self.input as &mut dyn SeqRead)
-            .seq_read_exact_data(size)
-            .await?;
+        let data = seq_read_exact_data(&mut self.input, size).await?;
         Ok(data)
     }
 
@@ -547,7 +539,7 @@ impl<I: SeqRead> DecoderImpl<I> {
                 size_of::<T>(),
             );
         }
-        (&mut self.input as &mut dyn SeqRead).seq_read_entry().await
+        seq_read_entry(&mut self.input).await
     }
 
     //

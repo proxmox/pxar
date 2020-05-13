@@ -110,6 +110,6 @@ pub struct Contents<'a> {
 
 impl<'a> io::Read for Contents<'a> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        poll_result_once((&mut self.inner as &mut dyn SeqRead).seq_read(buf))
+        poll_result_once(super::seq_read(&mut self.inner, buf))
     }
 }
