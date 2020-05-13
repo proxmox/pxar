@@ -88,66 +88,76 @@ impl<'a> SeqWrite for &mut (dyn SeqWrite + 'a) {
     }
 }
 
-impl<'a> dyn SeqWrite + 'a {
-    /// awaitable version of `poll_position`.
-    async fn position(&mut self) -> io::Result<u64> {
-        poll_fn(|cx| unsafe { Pin::new_unchecked(&mut *self).poll_position(cx) }).await
-    }
+/// awaitable version of `poll_position`.
+async fn seq_write_position<T: SeqWrite + ?Sized>(output: &mut T) -> io::Result<u64> {
+    poll_fn(move |cx| unsafe { Pin::new_unchecked(&mut *output).poll_position(cx) }).await
+}
 
-    /// awaitable verison of `poll_seq_write`.
-    async fn seq_write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        poll_fn(|cx| unsafe { Pin::new_unchecked(&mut *self).poll_seq_write(cx, buf) }).await
-    }
+/// awaitable verison of `poll_seq_write`.
+async fn seq_write<T: SeqWrite + ?Sized>(output: &mut T, buf: &[u8]) -> io::Result<usize> {
+    poll_fn(|cx| unsafe { Pin::new_unchecked(&mut *output).poll_seq_write(cx, buf) }).await
+}
 
-    /// Write the entire contents of a buffer, handling short writes.
-    async fn seq_write_all(&mut self, mut buf: &[u8]) -> io::Result<()> {
-        while !buf.is_empty() {
-            let got = self.seq_write(buf).await?;
-            buf = &buf[got..];
-        }
-        Ok(())
+/// Write the entire contents of a buffer, handling short writes.
+async fn seq_write_all<T: SeqWrite + ?Sized>(output: &mut T, mut buf: &[u8]) -> io::Result<()> {
+    while !buf.is_empty() {
+        let got = seq_write(&mut *output, buf).await?;
+        buf = &buf[got..];
     }
+    Ok(())
+}
 
-    /// Write an endian-swappable struct.
-    async fn seq_write_struct<E: Endian>(&mut self, data: E) -> io::Result<()> {
-        let data = data.to_le();
-        self.seq_write_all(unsafe {
-            std::slice::from_raw_parts(&data as *const E as *const u8, size_of_val(&data))
-        })
-        .await
-    }
+/// Write an endian-swappable struct.
+async fn seq_write_struct<E: Endian, T>(output: &mut T, data: E) -> io::Result<()>
+where
+    T: SeqWrite + ?Sized,
+{
+    let data = data.to_le();
+    seq_write_all(output, unsafe {
+        std::slice::from_raw_parts(&data as *const E as *const u8, size_of_val(&data))
+    })
+    .await
+}
 
-    /// Write a pxar entry.
-    async fn seq_write_pxar_entry(&mut self, htype: u64, data: &[u8]) -> io::Result<()> {
-        self.seq_write_struct(format::Header::with_content_size(htype, data.len() as u64))
-            .await?;
-        self.seq_write_all(data).await
-    }
+/// Write a pxar entry.
+async fn seq_write_pxar_entry<T>(output: &mut T, htype: u64, data: &[u8]) -> io::Result<()>
+where
+    T: SeqWrite + ?Sized,
+{
+    seq_write_struct(
+        &mut *output,
+        format::Header::with_content_size(htype, data.len() as u64),
+    )
+    .await?;
+    seq_write_all(output, data).await
+}
 
-    /// Write a pxar entry terminated by an additional zero which is not contained in the provided
-    /// data buffer.
-    async fn seq_write_pxar_entry_zero(&mut self, htype: u64, data: &[u8]) -> io::Result<()> {
-        self.seq_write_struct(format::Header::with_content_size(
-            htype,
-            1 + data.len() as u64,
-        ))
-        .await?;
-        self.seq_write_all(data).await?;
-        self.seq_write_all(&[0u8]).await
-    }
+/// Write a pxar entry terminated by an additional zero which is not contained in the provided
+/// data buffer.
+async fn seq_write_pxar_entry_zero<T>(output: &mut T, htype: u64, data: &[u8]) -> io::Result<()>
+where
+    T: SeqWrite + ?Sized,
+{
+    seq_write_struct(
+        &mut *output,
+        format::Header::with_content_size(htype, 1 + data.len() as u64),
+    )
+    .await?;
+    seq_write_all(&mut *output, data).await?;
+    seq_write_all(output, &[0u8]).await
+}
 
-    /// Write a pxar entry consiting of an endian-swappable struct.
-    async fn seq_write_pxar_struct_entry<E: Endian>(
-        &mut self,
-        htype: u64,
-        data: E,
-    ) -> io::Result<()> {
-        let data = data.to_le();
-        self.seq_write_pxar_entry(htype, unsafe {
-            std::slice::from_raw_parts(&data as *const E as *const u8, size_of_val(&data))
-        })
-        .await
-    }
+/// Write a pxar entry consiting of an endian-swappable struct.
+async fn seq_write_pxar_struct_entry<E, T>(output: &mut T, htype: u64, data: E) -> io::Result<()>
+where
+    T: SeqWrite + ?Sized,
+    E: Endian,
+{
+    let data = data.to_le();
+    seq_write_pxar_entry(output, htype, unsafe {
+        std::slice::from_raw_parts(&data as *const E as *const u8, size_of_val(&data))
+    })
+    .await
 }
 
 /// Error conditions caused by wrong usage of this crate.
@@ -238,7 +248,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         };
 
         this.encode_metadata(metadata).await?;
-        this.state.files_offset = (&mut this.output as &mut dyn SeqWrite).position().await?;
+        this.state.files_offset = seq_write_position(&mut this.output).await?;
 
         Ok(this)
     }
@@ -275,17 +285,16 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
     {
         self.check()?;
 
-        let file_offset = (&mut self.output as &mut dyn SeqWrite).position().await?;
+        let file_offset = seq_write_position(&mut self.output).await?;
         self.start_file_do(metadata, file_name).await?;
 
-        (&mut self.output as &mut dyn SeqWrite)
-            .seq_write_struct(format::Header::with_content_size(
-                format::PXAR_PAYLOAD,
-                file_size,
-            ))
-            .await?;
+        seq_write_struct(
+            &mut self.output,
+            format::Header::with_content_size(format::PXAR_PAYLOAD, file_size),
+        )
+        .await?;
 
-        let payload_data_offset = (&mut self.output as &mut dyn SeqWrite).position().await?;
+        let payload_data_offset = seq_write_position(&mut self.output).await?;
 
         let meta_size = payload_data_offset - file_offset;
 
@@ -401,18 +410,16 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
     ) -> io::Result<()> {
         self.check()?;
 
-        let file_offset = (&mut self.output as &mut dyn SeqWrite).position().await?;
+        let file_offset = seq_write_position(&mut self.output).await?;
 
         let file_name = file_name.as_os_str().as_bytes();
 
         self.start_file_do(metadata, file_name).await?;
         if let Some((htype, entry_data)) = entry_htype_data {
-            (&mut self.output as &mut dyn SeqWrite)
-                .seq_write_pxar_entry_zero(htype, entry_data)
-                .await?;
+            seq_write_pxar_entry_zero(&mut self.output, htype, entry_data).await?;
         }
 
-        let end_offset = (&mut self.output as &mut dyn SeqWrite).position().await?;
+        let end_offset = seq_write_position(&mut self.output).await?;
 
         self.state.items.push(GoodbyeItem {
             hash: format::hash_filename(file_name),
@@ -426,7 +433,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
     /// Helper
     #[inline]
     async fn position(&mut self) -> io::Result<u64> {
-        (&mut self.output as &mut dyn SeqWrite).position().await
+        seq_write_position(&mut self.output).await
     }
 
     pub async fn create_directory<'b>(
@@ -475,8 +482,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
     }
 
     async fn encode_metadata(&mut self, metadata: &Metadata) -> io::Result<()> {
-        (&mut self.output as &mut dyn SeqWrite)
-            .seq_write_pxar_struct_entry(format::PXAR_ENTRY, metadata.stat.clone())
+        seq_write_pxar_struct_entry(&mut self.output, format::PXAR_ENTRY, metadata.stat.clone())
             .await?;
 
         for xattr in &metadata.xattrs {
@@ -497,84 +503,81 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
     }
 
     async fn write_xattr(&mut self, xattr: &format::XAttr) -> io::Result<()> {
-        (&mut self.output as &mut dyn SeqWrite)
-            .seq_write_pxar_entry(format::PXAR_XATTR, &xattr.data)
-            .await
+        seq_write_pxar_entry(&mut self.output, format::PXAR_XATTR, &xattr.data).await
     }
 
     async fn write_acls(&mut self, acl: &crate::Acl) -> io::Result<()> {
         for acl in &acl.users {
-            (&mut self.output as &mut dyn SeqWrite)
-                .seq_write_pxar_struct_entry(format::PXAR_ACL_USER, acl.clone())
+            seq_write_pxar_struct_entry(&mut self.output, format::PXAR_ACL_USER, acl.clone())
                 .await?;
         }
 
         for acl in &acl.groups {
-            (&mut self.output as &mut dyn SeqWrite)
-                .seq_write_pxar_struct_entry(format::PXAR_ACL_GROUP, acl.clone())
+            seq_write_pxar_struct_entry(&mut self.output, format::PXAR_ACL_GROUP, acl.clone())
                 .await?;
         }
 
         if let Some(acl) = &acl.group_obj {
-            (&mut self.output as &mut dyn SeqWrite)
-                .seq_write_pxar_struct_entry(format::PXAR_ACL_GROUP_OBJ, acl.clone())
+            seq_write_pxar_struct_entry(&mut self.output, format::PXAR_ACL_GROUP_OBJ, acl.clone())
                 .await?;
         }
 
         if let Some(acl) = &acl.default {
-            (&mut self.output as &mut dyn SeqWrite)
-                .seq_write_pxar_struct_entry(format::PXAR_ACL_DEFAULT, acl.clone())
+            seq_write_pxar_struct_entry(&mut self.output, format::PXAR_ACL_DEFAULT, acl.clone())
                 .await?;
         }
 
         for acl in &acl.default_users {
-            (&mut self.output as &mut dyn SeqWrite)
-                .seq_write_pxar_struct_entry(format::PXAR_ACL_DEFAULT_USER, acl.clone())
-                .await?;
+            seq_write_pxar_struct_entry(
+                &mut self.output,
+                format::PXAR_ACL_DEFAULT_USER,
+                acl.clone(),
+            )
+            .await?;
         }
 
         for acl in &acl.default_groups {
-            (&mut self.output as &mut dyn SeqWrite)
-                .seq_write_pxar_struct_entry(format::PXAR_ACL_DEFAULT_GROUP, acl.clone())
-                .await?;
+            seq_write_pxar_struct_entry(
+                &mut self.output,
+                format::PXAR_ACL_DEFAULT_GROUP,
+                acl.clone(),
+            )
+            .await?;
         }
 
         Ok(())
     }
 
     async fn write_file_capabilities(&mut self, fcaps: &format::FCaps) -> io::Result<()> {
-        (&mut self.output as &mut dyn SeqWrite)
-            .seq_write_pxar_entry(format::PXAR_FCAPS, &fcaps.data)
-            .await
+        seq_write_pxar_entry(&mut self.output, format::PXAR_FCAPS, &fcaps.data).await
     }
 
     async fn write_quota_project_id(
         &mut self,
         quota_project_id: &format::QuotaProjectId,
     ) -> io::Result<()> {
-        (&mut self.output as &mut dyn SeqWrite)
-            .seq_write_pxar_struct_entry(format::PXAR_QUOTA_PROJID, quota_project_id.clone())
-            .await
+        seq_write_pxar_struct_entry(
+            &mut self.output,
+            format::PXAR_QUOTA_PROJID,
+            quota_project_id.clone(),
+        )
+        .await
     }
 
     async fn encode_filename(&mut self, file_name: &[u8]) -> io::Result<()> {
-        (&mut self.output as &mut dyn SeqWrite)
-            .seq_write_pxar_entry_zero(format::PXAR_FILENAME, file_name)
-            .await
+        seq_write_pxar_entry_zero(&mut self.output, format::PXAR_FILENAME, file_name).await
     }
 
     pub async fn finish(mut self) -> io::Result<()> {
         let tail_bytes = self.finish_goodbye_table().await?;
-        (&mut self.output as &mut dyn SeqWrite)
-            .seq_write_pxar_entry(format::PXAR_GOODBYE, &tail_bytes)
-            .await?;
+        seq_write_pxar_entry(&mut self.output, format::PXAR_GOODBYE, &tail_bytes).await?;
         if let Some(parent) = &mut self.parent {
             let file_offset = self
                 .state
                 .file_offset
                 .expect("internal error: parent set but no file_offset?");
 
-            let end_offset = (&mut self.output as &mut dyn SeqWrite).position().await?;
+            let end_offset = seq_write_position(&mut self.output).await?;
 
             parent.items.push(GoodbyeItem {
                 hash: self.state.file_hash,
@@ -587,7 +590,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
     }
 
     async fn finish_goodbye_table(&mut self) -> io::Result<Vec<u8>> {
-        let goodbye_offset = (&mut self.output as &mut dyn SeqWrite).position().await?;
+        let goodbye_offset = seq_write_position(&mut self.output).await?;
 
         // "take" out the tail (to not leave an array of endian-swapped structs in `self`)
         let mut tail = take(&mut self.state.items);
@@ -709,7 +712,7 @@ impl<'a> FileImpl<'a> {
     /// for convenience.
     pub async fn write(&mut self, data: &[u8]) -> io::Result<usize> {
         self.check_remaining(data.len())?;
-        let put = self.output.seq_write(data).await?;
+        let put = seq_write(&mut self.output, data).await?;
         self.remaining_size -= put as u64;
         Ok(put)
     }
@@ -717,7 +720,7 @@ impl<'a> FileImpl<'a> {
     /// Completely write file data for the current file entry in a pxar archive.
     pub async fn write_all(&mut self, data: &[u8]) -> io::Result<()> {
         self.check_remaining(data.len())?;
-        self.output.seq_write_all(data).await?;
+        seq_write_all(&mut self.output, data).await?;
         self.remaining_size -= data.len() as u64;
         Ok(())
     }
