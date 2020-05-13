@@ -96,6 +96,20 @@ impl<'a> ReadAt for &(dyn ReadAt + 'a) {
     }
 }
 
+/// Convenience impl for `Arc<dyn ReadAt + Send + Sync + 'static>`. Since `ReadAt` only requires
+/// immutable `&self`, this adds some convenience by allowing to just `Arc` any `'static` type that
+/// implemments `ReadAt` for type monomorphization.
+impl ReadAt for Arc<dyn ReadAt + Send + Sync + 'static> {
+    fn poll_read_at(
+        self: Pin<&Self>,
+        cx: &mut Context,
+        buf: &mut [u8],
+        offset: u64,
+    ) -> Poll<io::Result<usize>> {
+        unsafe { Pin::new_unchecked(&**self).poll_read_at(cx, buf, offset) }
+    }
+}
+
 #[derive(Clone)]
 struct Caches {
     /// The goodbye table cache maps goodbye table offsets to cache entries.
