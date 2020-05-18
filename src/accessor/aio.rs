@@ -15,6 +15,7 @@ use std::task::{Context, Poll};
 use crate::accessor::{self, cache::Cache, ReadAt};
 use crate::decoder::Decoder;
 use crate::format::GoodbyeItem;
+use crate::poll_fn::poll_fn;
 use crate::Entry;
 
 use super::sync::{FileReader, FileRefReader};
@@ -347,5 +348,13 @@ impl<T: Clone + ReadAt> ReadAt for FileContents<T> {
         offset: u64,
     ) -> Poll<io::Result<usize>> {
         unsafe { self.map_unchecked(|this| &this.inner) }.poll_read_at(cx, buf, offset)
+    }
+}
+
+impl<T: Clone + ReadAt> FileContents<T> {
+    /// Convenience helper for `read_at`:
+    pub async fn read_at(&self, buf: &mut [u8], offset: u64) -> io::Result<usize> {
+        let this = unsafe { Pin::new_unchecked(self) };
+        poll_fn(move |cx| this.poll_read_at(cx, buf, offset)).await
     }
 }
