@@ -246,6 +246,12 @@ impl Entry {
         &self.metadata
     }
 
+    /// Take out the metadata.
+    #[inline]
+    pub fn into_metadata(self) -> Metadata {
+        self.metadata
+    }
+
     /// Get the entry-type specific information.
     pub fn kind(&self) -> &EntryKind {
         &self.kind
