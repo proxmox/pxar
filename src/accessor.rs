@@ -537,6 +537,7 @@ impl<T: Clone + ReadAt> DirectoryImpl<T> {
 }
 
 /// A file entry retrieved from a Directory.
+#[derive(Clone)]
 pub(crate) struct FileEntryImpl<T: Clone + ReadAt> {
     input: T,
     entry: Entry,

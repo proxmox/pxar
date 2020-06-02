@@ -185,6 +185,7 @@ impl<T: Clone + ReadAt> Directory<T> {
 
 /// A file entry in a direcotry, retrieved via the `lookup` method or from
 /// `DirEntry::decode_entry``.
+#[derive(Clone)]
 #[repr(transparent)]
 pub struct FileEntry<T: Clone + ReadAt> {
     inner: accessor::FileEntryImpl<T>,
