@@ -51,6 +51,12 @@ impl<T: SeqRead> Decoder<T> {
         })
     }
 
+    /// Internal helper for `Accessor`. In this case we have the low-level state machine, and the
+    /// layer "above" the `Accessor` propagates the actual type (sync vs async).
+    pub(crate) fn from_impl(inner: decoder::DecoderImpl<T>) -> Self {
+        Self { inner }
+    }
+
     /// If this is a directory entry, get the next item inside the directory.
     pub async fn next(&mut self) -> Option<io::Result<Entry>> {
         self.inner.next_do().await.transpose()

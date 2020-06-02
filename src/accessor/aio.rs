@@ -13,7 +13,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use crate::accessor::{self, cache::Cache, ReadAt};
-use crate::decoder::Decoder;
+use crate::decoder::aio::Decoder;
 use crate::format::GoodbyeItem;
 use crate::poll_fn::poll_fn;
 use crate::Entry;
