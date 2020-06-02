@@ -204,6 +204,18 @@ impl Entry {
         fmt == mode::IFCHR || fmt == mode::IFBLK
     }
 
+    /// Check whether this is a block device node.
+    pub fn is_blockdev(&self) -> bool {
+        let fmt = self.mode & mode::IFMT;
+        fmt == mode::IFBLK
+    }
+
+    /// Check whether this is a character device node.
+    pub fn is_chardev(&self) -> bool {
+        let fmt = self.mode & mode::IFMT;
+        fmt == mode::IFCHR
+    }
+
     /// Check whether this is a regular file.
     pub fn is_regular_file(&self) -> bool {
         (self.mode & mode::IFMT) == mode::IFREG
