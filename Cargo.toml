@@ -3,7 +3,11 @@ name = "pxar"
 version = "0.1.0"
 authors = ["Wolfgang Bumiller <w.bumiller@proxmox.com>"]
 edition = "2018"
+license = "AGPL-3"
+description = "Proxmox Archive format support library"
 exclude = [
+    "build",
+    "debian",
     "testdir",
 ]
 

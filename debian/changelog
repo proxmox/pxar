@@ -1,0 +1,5 @@
+rust-pxar (0.1.0-1) pve; urgency=medium
+
+  * initial release
+
+ -- Proxmox Support Team <support@proxmox.com>  Wed, 03 Jun 2020 12:34:49 +0200
