@@ -1,3 +1,9 @@
+rust-pxar (0.1.1-1) pve; urgency=medium
+
+  * change acl Permissions to be just a u64 instead of a bitfield
+
+ -- Proxmox Support Team <support@proxmox.com>  Thu, 04 Jun 2020 11:26:19 +0200
+
 rust-pxar (0.1.0-1) pve; urgency=medium
 
   * initial release
