@@ -4,15 +4,20 @@ use std::cmp::Ordering;
 
 use endian_trait::Endian;
 
-bitflags::bitflags! {
-    /// ACL permission bits.
-    #[derive(Endian)]
-    pub struct Permissions: u64 {
-        const READ = 4;
-        const WRITE = 2;
-        const EXECUTE = 1;
-        const NO_MASK = std::u64::MAX;
-    }
+pub const READ: u64 = 4;
+pub const WRITE: u64 = 2;
+pub const EXECUTE: u64 = 1;
+pub const NO_MASK: u64 = std::u64::MAX;
+
+/// ACL permission bits.
+///
+/// While this is normally just a bitfield, the `NO_MASK` special value makes this a value of 2
+/// possible "types", so we don't use `bitflags!` for this.
+#[derive(Clone, Copy, Debug, Endian, Eq, Ord, PartialEq, PartialOrd)]
+pub struct Permissions(pub u64);
+
+impl Permissions {
+    pub const NO_MASK: Permissions = Permissions(NO_MASK);
 }
 
 #[derive(Clone, Debug, Endian, Eq)]
