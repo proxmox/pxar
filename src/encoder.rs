@@ -230,7 +230,7 @@ impl<'a, T: SeqWrite + 'a> Drop for EncoderImpl<'a, T> {
             }
         } else if !self.finished {
             // FIXME: how do we deal with this?
-            eprintln!("Encoder dropped without finishing!");
+            // eprintln!("Encoder dropped without finishing!");
         }
     }
 }
