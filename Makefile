@@ -24,5 +24,5 @@ deb:
 
 .PHONY: clean
 clean:
-	rm -rf build
+	rm -rf build *.deb *.buildinfo *.changes *.orig.tar.gz
 	cargo clean
