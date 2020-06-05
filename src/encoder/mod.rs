@@ -348,13 +348,14 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         metadata: &Metadata,
         file_name: &Path,
         target: &Path,
-    ) -> io::Result<LinkOffset> {
-        self.add_file_entry(
+    ) -> io::Result<()> {
+        let _ofs: LinkOffset = self.add_file_entry(
             Some(metadata),
             file_name,
             Some((format::PXAR_SYMLINK, target.as_os_str().as_bytes())),
         )
-        .await
+        .await?;
+        Ok(())
     }
 
     /// Return a file offset usable with `add_hardlink`.
@@ -389,7 +390,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         metadata: &Metadata,
         file_name: &Path,
         device: format::Device,
-    ) -> io::Result<LinkOffset> {
+    ) -> io::Result<()> {
         if !metadata.is_device() {
             io_bail!("entry added via add_device must have a device mode in its metadata");
         }
@@ -401,30 +402,33 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
                 size_of::<format::Device>(),
             )
         };
-        self.add_file_entry(
+        let _ofs: LinkOffset = self.add_file_entry(
             Some(metadata),
             file_name,
             Some((format::PXAR_DEVICE, device)),
         )
-        .await
+        .await?;
+        Ok(())
     }
 
     /// Return a file offset usable with `add_hardlink`.
-    pub async fn add_fifo(&mut self, metadata: &Metadata, file_name: &Path) -> io::Result<LinkOffset> {
+    pub async fn add_fifo(&mut self, metadata: &Metadata, file_name: &Path) -> io::Result<()> {
         if !metadata.is_fifo() {
             io_bail!("entry added via add_device must be of type fifo in its metadata");
         }
 
-        self.add_file_entry(Some(metadata), file_name, None).await
+        let _ofs: LinkOffset = self.add_file_entry(Some(metadata), file_name, None).await?;
+        Ok(())
     }
 
     /// Return a file offset usable with `add_hardlink`.
-    pub async fn add_socket(&mut self, metadata: &Metadata, file_name: &Path) -> io::Result<LinkOffset> {
+    pub async fn add_socket(&mut self, metadata: &Metadata, file_name: &Path) -> io::Result<()> {
         if !metadata.is_socket() {
             io_bail!("entry added via add_device must be of type socket in its metadata");
         }
 
-        self.add_file_entry(Some(metadata), file_name, None).await
+        let _ofs: LinkOffset = self.add_file_entry(Some(metadata), file_name, None).await?;
+        Ok(())
     }
 
     /// Return a file offset usable with `add_hardlink`.

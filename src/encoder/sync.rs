@@ -119,7 +119,7 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
         metadata: &Metadata,
         file_name: PF,
         target: PT,
-    ) -> io::Result<LinkOffset> {
+    ) -> io::Result<()> {
         poll_result_once(
             self.inner
                 .add_symlink(metadata, file_name.as_ref(), target.as_ref()),
@@ -142,7 +142,7 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
         metadata: &Metadata,
         file_name: P,
         device: format::Device,
-    ) -> io::Result<LinkOffset> {
+    ) -> io::Result<()> {
         poll_result_once(self.inner.add_device(metadata, file_name.as_ref(), device))
     }
 
@@ -151,7 +151,7 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
         &mut self,
         metadata: &Metadata,
         file_name: P,
-    ) -> io::Result<LinkOffset> {
+    ) -> io::Result<()> {
         poll_result_once(self.inner.add_fifo(metadata, file_name.as_ref()))
     }
 
@@ -160,7 +160,7 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
         &mut self,
         metadata: &Metadata,
         file_name: P,
-    ) -> io::Result<LinkOffset> {
+    ) -> io::Result<()> {
         poll_result_once(self.inner.add_socket(metadata, file_name.as_ref()))
     }
 }
