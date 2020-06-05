@@ -5,7 +5,7 @@ use std::path::Path;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use crate::encoder::{self, SeqWrite, LinkOffset};
+use crate::encoder::{self, LinkOffset, SeqWrite};
 use crate::format;
 use crate::Metadata;
 

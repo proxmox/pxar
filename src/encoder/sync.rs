@@ -6,7 +6,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use crate::decoder::sync::StandardReader;
-use crate::encoder::{self, SeqWrite, LinkOffset};
+use crate::encoder::{self, LinkOffset, SeqWrite};
 use crate::format;
 use crate::util::poll_result_once;
 use crate::Metadata;
@@ -133,7 +133,10 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
         target: PT,
         offset: LinkOffset,
     ) -> io::Result<()> {
-        poll_result_once(self.inner.add_hardlink(file_name.as_ref(), target.as_ref(), offset))
+        poll_result_once(
+            self.inner
+                .add_hardlink(file_name.as_ref(), target.as_ref(), offset),
+        )
     }
 
     /// Add a device node to the archive.

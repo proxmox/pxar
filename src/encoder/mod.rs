@@ -349,12 +349,13 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         file_name: &Path,
         target: &Path,
     ) -> io::Result<()> {
-        let _ofs: LinkOffset = self.add_file_entry(
-            Some(metadata),
-            file_name,
-            Some((format::PXAR_SYMLINK, target.as_os_str().as_bytes())),
-        )
-        .await?;
+        let _ofs: LinkOffset = self
+            .add_file_entry(
+                Some(metadata),
+                file_name,
+                Some((format::PXAR_SYMLINK, target.as_os_str().as_bytes())),
+            )
+            .await?;
         Ok(())
     }
 
@@ -375,12 +376,9 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
                 size_of::<format::Hardlink>(),
             )
         };
-        let _this_offset: LinkOffset = self.add_file_entry(
-            None,
-            file_name,
-            Some((format::PXAR_HARDLINK, hardlink)),
-        )
-        .await?;
+        let _this_offset: LinkOffset = self
+            .add_file_entry(None, file_name, Some((format::PXAR_HARDLINK, hardlink)))
+            .await?;
         Ok(())
     }
 
@@ -402,12 +400,13 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
                 size_of::<format::Device>(),
             )
         };
-        let _ofs: LinkOffset = self.add_file_entry(
-            Some(metadata),
-            file_name,
-            Some((format::PXAR_DEVICE, device)),
-        )
-        .await?;
+        let _ofs: LinkOffset = self
+            .add_file_entry(
+                Some(metadata),
+                file_name,
+                Some((format::PXAR_DEVICE, device)),
+            )
+            .await?;
         Ok(())
     }
 

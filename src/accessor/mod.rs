@@ -230,7 +230,8 @@ impl<T: Clone + ReadAt> AccessorImpl<T> {
             self.input.clone(),
             link.offset..self.size,
             PathBuf::from(link.as_os_str()),
-        ).await?;
+        )
+        .await?;
         let entry = decoder
             .next()
             .await
@@ -239,7 +240,10 @@ impl<T: Clone + ReadAt> AccessorImpl<T> {
             EntryKind::File { offset: None, .. } => {
                 io_bail!("failed to follow hardlink, reader provided no offsets");
             }
-            EntryKind::File { offset: Some(offset), size } => {
+            EntryKind::File {
+                offset: Some(offset),
+                size,
+            } => {
                 let meta_size = offset - link.offset;
                 let entry_end = link.offset + meta_size + size;
                 Ok(FileEntryImpl {
