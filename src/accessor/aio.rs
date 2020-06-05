@@ -14,7 +14,7 @@ use std::task::{Context, Poll};
 
 use crate::accessor::{self, cache::Cache, ReadAt};
 use crate::decoder::aio::Decoder;
-use crate::format::GoodbyeItem;
+use crate::format::{GoodbyeItem, Hardlink};
 use crate::poll_fn::poll_fn;
 use crate::Entry;
 
@@ -132,6 +132,13 @@ impl<T: Clone + ReadAt> Accessor<T> {
             inner: self.inner.open_contents_at_range(range),
             at: 0,
         }
+    }
+
+    /// Following a hardlink.
+    pub async fn follow_hardlink(&self, link: &Hardlink) -> io::Result<FileEntry<T>> {
+        Ok(FileEntry {
+            inner: self.inner.follow_hardlink(link).await?,
+        })
     }
 }
 

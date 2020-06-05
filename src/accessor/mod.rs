@@ -221,6 +221,37 @@ impl<T: Clone + ReadAt> AccessorImpl<T> {
     pub unsafe fn open_contents_at_range(&self, range: Range<u64>) -> FileContentsImpl<T> {
         FileContentsImpl::new(self.input.clone(), range)
     }
+
+    /// Following a hardlink breaks a couple of conventions we otherwise have, particularly we will
+    /// never know the actual length of the target entry until we're done decoding it, so this
+    /// needs to happen at the accessor level, rather than a "sub-entry-reader".
+    pub async fn follow_hardlink(&self, link: &format::Hardlink) -> io::Result<FileEntryImpl<T>> {
+        let mut decoder = get_decoder(
+            self.input.clone(),
+            link.offset..self.size,
+            PathBuf::from(link.as_os_str()),
+        ).await?;
+        let entry = decoder
+            .next()
+            .await
+            .ok_or_else(|| io_format_err!("unexpected EOF while following a hardlink"))??;
+        match entry.kind() {
+            EntryKind::File { offset: None, .. } => {
+                io_bail!("failed to follow hardlink, reader provided no offsets");
+            }
+            EntryKind::File { offset: Some(offset), size } => {
+                let meta_size = offset - link.offset;
+                let entry_end = link.offset + meta_size + size;
+                Ok(FileEntryImpl {
+                    input: self.input.clone(),
+                    entry,
+                    entry_range: link.offset..entry_end,
+                    caches: Arc::clone(&self.caches),
+                })
+            }
+            _ => io_bail!("hardlink does not point to a regular file"),
+        }
+    }
 }
 
 /// The directory random-access state machine implementation.
