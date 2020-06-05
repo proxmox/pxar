@@ -364,10 +364,15 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         &mut self,
         file_name: &Path,
         target: &Path,
-        offset: LinkOffset,
+        target_offset: LinkOffset,
     ) -> io::Result<()> {
+        let current_offset = seq_write_position(&mut self.output).await?;
+        if current_offset <= target_offset.0 {
+            io_bail!("invalid hardlink offset, can only point to prior files");
+        }
+
         let hardlink = format::Hardlink {
-            offset: offset.0,
+            offset: current_offset - target_offset.0,
             data: target.as_os_str().as_bytes().to_vec(),
         };
         let hardlink = unsafe {
