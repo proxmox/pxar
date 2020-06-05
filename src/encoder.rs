@@ -286,7 +286,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         self.check()?;
 
         let file_offset = seq_write_position(&mut self.output).await?;
-        self.start_file_do(metadata, file_name).await?;
+        self.start_file_do(Some(metadata), file_name).await?;
 
         seq_write_struct(
             &mut self.output,
@@ -336,23 +336,18 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         file_name: &Path,
         target: &Path,
     ) -> io::Result<()> {
-        self.add_link(metadata, file_name, target, format::PXAR_SYMLINK)
+        self.add_link(Some(metadata), file_name, target, format::PXAR_SYMLINK)
             .await
     }
 
-    pub async fn add_hardlink(
-        &mut self,
-        metadata: &Metadata,
-        file_name: &Path,
-        target: &Path,
-    ) -> io::Result<()> {
-        self.add_link(metadata, file_name, target, format::PXAR_HARDLINK)
+    pub async fn add_hardlink(&mut self, file_name: &Path, target: &Path) -> io::Result<()> {
+        self.add_link(None, file_name, target, format::PXAR_HARDLINK)
             .await
     }
 
     async fn add_link(
         &mut self,
-        metadata: &Metadata,
+        metadata: Option<&Metadata>,
         file_name: &Path,
         target: &Path,
         htype: u64,
@@ -382,8 +377,12 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
                 size_of::<format::Device>(),
             )
         };
-        self.add_file_entry(metadata, file_name, Some((format::PXAR_DEVICE, device)))
-            .await
+        self.add_file_entry(
+            Some(metadata),
+            file_name,
+            Some((format::PXAR_DEVICE, device)),
+        )
+        .await
     }
 
     pub async fn add_fifo(&mut self, metadata: &Metadata, file_name: &Path) -> io::Result<()> {
@@ -391,7 +390,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
             io_bail!("entry added via add_device must be of type fifo in its metadata");
         }
 
-        self.add_file_entry(metadata, file_name, None).await
+        self.add_file_entry(Some(metadata), file_name, None).await
     }
 
     pub async fn add_socket(&mut self, metadata: &Metadata, file_name: &Path) -> io::Result<()> {
@@ -399,12 +398,12 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
             io_bail!("entry added via add_device must be of type socket in its metadata");
         }
 
-        self.add_file_entry(metadata, file_name, None).await
+        self.add_file_entry(Some(metadata), file_name, None).await
     }
 
     async fn add_file_entry(
         &mut self,
-        metadata: &Metadata,
+        metadata: Option<&Metadata>,
         file_name: &Path,
         entry_htype_data: Option<(u64, &[u8])>,
     ) -> io::Result<()> {
@@ -475,9 +474,15 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         })
     }
 
-    async fn start_file_do(&mut self, metadata: &Metadata, file_name: &[u8]) -> io::Result<()> {
+    async fn start_file_do(
+        &mut self,
+        metadata: Option<&Metadata>,
+        file_name: &[u8],
+    ) -> io::Result<()> {
         self.encode_filename(file_name).await?;
-        self.encode_metadata(&metadata).await?;
+        if let Some(metadata) = metadata {
+            self.encode_metadata(&metadata).await?;
+        }
         Ok(())
     }
 

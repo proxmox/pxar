@@ -346,41 +346,43 @@ impl<I: SeqRead> DecoderImpl<I> {
         self.state = State::Default;
         self.entry.clear_data();
 
-        #[derive(Endian)]
-        #[repr(C)]
-        struct WithHeader<T: Endian> {
-            header: Header,
-            data: T,
-        }
-
-        let entry: WithHeader<format::Entry> = {
-            match seq_read_entry_or_eof(&mut self.input).await? {
-                None => return Ok(None),
-                Some(entry) => entry,
-            }
+        let header: Header = match seq_read_entry_or_eof(&mut self.input).await? {
+            None => return Ok(None),
+            Some(header) => header,
         };
 
-        if entry.header.htype != format::PXAR_ENTRY {
+        if header.htype == format::PXAR_HARDLINK {
+            // The only "dangling" header without an 'Entry' in front of it because it does not
+            // carry its own metadata.
+            self.current_header = header;
+
+            // Hardlinks have no metadata and no additional items.
+            self.entry.metadata = Metadata::default();
+            self.entry.kind = EntryKind::Hardlink(self.read_hardlink().await?);
+
+            Ok(Some(self.entry.take()))
+        } else if header.htype == format::PXAR_ENTRY {
+            self.entry.metadata = Metadata {
+                stat: seq_read_entry(&mut self.input).await?,
+                ..Default::default()
+            };
+
+            self.current_header = unsafe { mem::zeroed() };
+
+            while self.read_next_item().await? != ItemResult::Entry {}
+
+            if self.entry.is_dir() {
+                self.path_lengths
+                    .push(self.entry.path.as_os_str().as_bytes().len());
+            }
+
+            Ok(Some(self.entry.take()))
+        } else {
             io_bail!(
                 "expected pxar entry of type 'Entry', got: {:x}",
-                entry.header.htype
+                header.htype
             );
         }
-
-        self.current_header = unsafe { mem::zeroed() };
-        self.entry.metadata = Metadata {
-            stat: entry.data,
-            ..Default::default()
-        };
-
-        while self.read_next_item().await? != ItemResult::Entry {}
-
-        if self.entry.is_dir() {
-            self.path_lengths
-                .push(self.entry.path.as_os_str().as_bytes().len());
-        }
-
-        Ok(Some(self.entry.take()))
     }
 
     async fn read_next_entry(&mut self) -> io::Result<Entry> {
@@ -460,10 +462,7 @@ impl<I: SeqRead> DecoderImpl<I> {
                 self.entry.kind = EntryKind::Symlink(self.read_symlink().await?);
                 return Ok(ItemResult::Entry);
             }
-            format::PXAR_HARDLINK => {
-                self.entry.kind = EntryKind::Hardlink(self.read_hardlink().await?);
-                return Ok(ItemResult::Entry);
-            }
+            format::PXAR_HARDLINK => io_bail!("encountered unexpected hardlink entry"),
             format::PXAR_DEVICE => {
                 self.entry.kind = EntryKind::Device(self.read_device().await?);
                 return Ok(ItemResult::Entry);

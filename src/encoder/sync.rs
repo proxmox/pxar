@@ -129,14 +129,10 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
     /// Add a hard link to the archive.
     pub fn add_hardlink<PF: AsRef<Path>, PT: AsRef<Path>>(
         &mut self,
-        metadata: &Metadata,
         file_name: PF,
         target: PT,
     ) -> io::Result<()> {
-        poll_result_once(
-            self.inner
-                .add_hardlink(metadata, file_name.as_ref(), target.as_ref()),
-        )
+        poll_result_once(self.inner.add_hardlink(file_name.as_ref(), target.as_ref()))
     }
 
     /// Add a device node to the archive.

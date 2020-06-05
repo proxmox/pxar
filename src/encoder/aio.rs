@@ -147,12 +147,11 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
     /// Add a hard link to the archive.
     pub async fn add_hardlink<PF: AsRef<Path>, PT: AsRef<Path>>(
         &mut self,
-        metadata: &Metadata,
         file_name: PF,
         target: PT,
     ) -> io::Result<()> {
         self.inner
-            .add_hardlink(metadata, file_name.as_ref(), target.as_ref())
+            .add_hardlink(file_name.as_ref(), target.as_ref())
             .await
     }
 
