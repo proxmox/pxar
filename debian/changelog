@@ -1,3 +1,11 @@
+rust-pxar (0.1.4-1) pve; urgency=medium
+
+  * remove LinkOffset from some file types
+  * change API for hardlink following
+  * properly interpret hardlink offsets relative in the decoder
+
+ -- Proxmox Support Team <support@proxmox.com>  Fri, 05 Jun 2020 16:23:21 +0200
+
 rust-pxar (0.1.3-1) pve; urgency=medium
 
   * introduce LinkOffset which is used to create hardlinks
