@@ -1,3 +1,9 @@
+rust-pxar (0.1.2-1) pve; urgency=medium
+
+  * update hardlink format
+
+ -- Proxmox Support Team <support@proxmox.com>  Fri, 05 Jun 2020 12:20:44 +0200
+
 rust-pxar (0.1.1-1) pve; urgency=medium
 
   * change acl Permissions to be just a u64 instead of a bitfield
