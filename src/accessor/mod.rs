@@ -28,6 +28,22 @@ pub use sync::{Accessor, DirEntry, Directory, FileEntry, ReadDir};
 
 use cache::Cache;
 
+/// Range information used for unsafe raw random access:
+#[derive(Clone, Debug)]
+pub struct EntryRangeInfo {
+    pub filename_header_offset: Option<u64>,
+    pub entry_range: Range<u64>,
+}
+
+impl EntryRangeInfo {
+    pub fn toplevel(entry_range: Range<u64>) -> Self {
+        Self {
+            filename_header_offset: None,
+            entry_range,
+        }
+    }
+}
+
 /// Random access read implementation.
 pub trait ReadAt {
     fn poll_read_at(
@@ -177,6 +193,27 @@ async fn get_decoder<T: ReadAt>(
     Ok(DecoderImpl::new_full(SeqReadAtAdapter::new(input, entry_range), path).await?)
 }
 
+// NOTE: This performs the Decoder::read_next_item() behavior! Keep in mind when changing!
+async fn get_decoder_at_filename<T: ReadAt>(
+    input: T,
+    entry_range: Range<u64>,
+    path: PathBuf,
+) -> io::Result<(DecoderImpl<SeqReadAtAdapter<T>>, u64)> {
+    let mut decoder = get_decoder(input, entry_range, path).await?;
+    decoder.path_lengths.push(0);
+    decoder.read_next_header().await?;
+    if decoder.current_header.htype != format::PXAR_FILENAME {
+        io_bail!("expected filename entry, got {:?}", decoder.current_header.htype);
+    }
+    if decoder.read_current_item().await? != decoder::ItemResult::Entry {
+        // impossible, since we checked the header type above for a "proper" error message
+        io_bail!("unexpected decoder state");
+    }
+    let entry_offset = decoder::seq_read_position(&mut decoder.input).await.transpose()?
+        .ok_or_else(|| io_format_err!("reader provided no offset"))?;
+    Ok((decoder, entry_offset))
+}
+
 impl<T: Clone + ReadAt> AccessorImpl<T> {
     pub async fn open_root(&self) -> io::Result<DirectoryImpl<T>> {
         DirectoryImpl::open_at_end(
@@ -202,9 +239,13 @@ impl<T: Clone + ReadAt> AccessorImpl<T> {
     /// Allow opening a regular file from a specified range.
     pub async unsafe fn open_file_at_range(
         &self,
-        range: Range<u64>,
+        entry_range_info: &EntryRangeInfo,
     ) -> io::Result<FileEntryImpl<T>> {
-        let mut decoder = get_decoder(self.input.clone(), range.clone(), PathBuf::new()).await?;
+        let mut decoder = get_decoder(
+            self.input.clone(),
+            entry_range_info.entry_range.clone(),
+            PathBuf::new(),
+        ).await?;
         let entry = decoder
             .next()
             .await
@@ -212,7 +253,7 @@ impl<T: Clone + ReadAt> AccessorImpl<T> {
         Ok(FileEntryImpl {
             input: self.input.clone(),
             entry,
-            entry_range: range,
+            entry_range_info: entry_range_info.clone(),
             caches: Arc::clone(&self.caches),
         })
     }
@@ -225,13 +266,30 @@ impl<T: Clone + ReadAt> AccessorImpl<T> {
     /// Following a hardlink breaks a couple of conventions we otherwise have, particularly we will
     /// never know the actual length of the target entry until we're done decoding it, so this
     /// needs to happen at the accessor level, rather than a "sub-entry-reader".
-    pub async fn follow_hardlink(&self, link: &format::Hardlink) -> io::Result<FileEntryImpl<T>> {
-        let mut decoder = get_decoder(
+    pub async fn follow_hardlink(&self, entry: &FileEntryImpl<T>) -> io::Result<FileEntryImpl<T>> {
+        let link_offset = match entry.entry.kind() {
+            EntryKind::Hardlink(link) => link.offset,
+            _ => io_bail!("cannot resolve a non-hardlink"),
+        };
+
+        let entry_file_offset = entry
+            .entry_range_info
+            .filename_header_offset
+            .ok_or_else(|| io_format_err!("cannot follow hardlink without a file entry header"))?;
+
+        if link_offset > entry_file_offset {
+            io_bail!("invalid offset in hardlink");
+        }
+
+        let link_offset = entry_file_offset - link_offset;
+
+        let (mut decoder, entry_offset) = get_decoder_at_filename(
             self.input.clone(),
-            link.offset..self.size,
-            PathBuf::from(link.as_os_str()),
+            link_offset..self.size,
+            PathBuf::new(),
         )
         .await?;
+
         let entry = decoder
             .next()
             .await
@@ -244,12 +302,15 @@ impl<T: Clone + ReadAt> AccessorImpl<T> {
                 offset: Some(offset),
                 size,
             } => {
-                let meta_size = offset - link.offset;
-                let entry_end = link.offset + meta_size + size;
+                let meta_size = offset - link_offset;
+                let entry_end = link_offset + meta_size + size;
                 Ok(FileEntryImpl {
                     input: self.input.clone(),
                     entry,
-                    entry_range: link.offset..entry_end,
+                    entry_range_info: EntryRangeInfo {
+                        filename_header_offset: Some(link_offset),
+                        entry_range: entry_offset..entry_end,
+                    },
                     caches: Arc::clone(&self.caches),
                 })
             }
@@ -427,7 +488,10 @@ impl<T: Clone + ReadAt> DirectoryImpl<T> {
         Ok(FileEntryImpl {
             input: self.input.clone(),
             entry,
-            entry_range: self.entry_range(),
+            entry_range_info: EntryRangeInfo {
+                filename_header_offset: None,
+                entry_range: self.entry_range(),
+            },
             caches: Arc::clone(&self.caches),
         })
     }
@@ -530,7 +594,10 @@ impl<T: Clone + ReadAt> DirectoryImpl<T> {
         Ok(DirEntryImpl {
             dir: self,
             file_name,
-            entry_range,
+            entry_range_info: EntryRangeInfo {
+                filename_header_offset: Some(file_ofs),
+                entry_range,
+            },
             caches: Arc::clone(&self.caches),
         })
     }
@@ -576,7 +643,7 @@ impl<T: Clone + ReadAt> DirectoryImpl<T> {
 pub(crate) struct FileEntryImpl<T: Clone + ReadAt> {
     input: T,
     entry: Entry,
-    entry_range: Range<u64>,
+    entry_range_info: EntryRangeInfo,
     caches: Arc<Caches>,
 }
 
@@ -588,7 +655,7 @@ impl<T: Clone + ReadAt> FileEntryImpl<T> {
 
         DirectoryImpl::open_at_end(
             self.input.clone(),
-            self.entry_range.end,
+            self.entry_range_info.entry_range.end,
             self.entry.path.clone(),
             Arc::clone(&self.caches),
         )
@@ -628,8 +695,8 @@ impl<T: Clone + ReadAt> FileEntryImpl<T> {
 
     /// Exposed for raw by-offset access methods (use with `open_dir_at_end`).
     #[inline]
-    pub fn entry_range(&self) -> Range<u64> {
-        self.entry_range.clone()
+    pub fn entry_range_info(&self) -> &EntryRangeInfo {
+        &self.entry_range_info
     }
 }
 
@@ -678,7 +745,7 @@ impl<'a, T: Clone + ReadAt> ReadDirImpl<'a, T> {
 pub(crate) struct DirEntryImpl<'a, T: Clone + ReadAt> {
     dir: &'a DirectoryImpl<T>,
     file_name: PathBuf,
-    entry_range: Range<u64>,
+    entry_range_info: EntryRangeInfo,
     caches: Arc<Caches>,
 }
 
@@ -690,21 +757,21 @@ impl<'a, T: Clone + ReadAt> DirEntryImpl<'a, T> {
     async fn decode_entry(&self) -> io::Result<FileEntryImpl<T>> {
         let (entry, _decoder) = self
             .dir
-            .decode_one_entry(self.entry_range.clone(), Some(&self.file_name))
+            .decode_one_entry(self.entry_range_info.entry_range.clone(), Some(&self.file_name))
             .await?;
 
         Ok(FileEntryImpl {
             input: self.dir.input.clone(),
             entry,
-            entry_range: self.entry_range(),
+            entry_range_info: self.entry_range_info.clone(),
             caches: Arc::clone(&self.caches),
         })
     }
 
     /// Exposed for raw by-offset access methods.
     #[inline]
-    pub fn entry_range(&self) -> Range<u64> {
-        self.entry_range.clone()
+    pub fn entry_range_info(&self) -> &EntryRangeInfo {
+        &self.entry_range_info
     }
 }
 

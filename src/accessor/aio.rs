@@ -14,7 +14,7 @@ use std::task::{Context, Poll};
 
 use crate::accessor::{self, cache::Cache, ReadAt};
 use crate::decoder::aio::Decoder;
-use crate::format::{GoodbyeItem, Hardlink};
+use crate::format::GoodbyeItem;
 use crate::poll_fn::poll_fn;
 use crate::Entry;
 
@@ -120,9 +120,12 @@ impl<T: Clone + ReadAt> Accessor<T> {
     }
 
     /// Allow opening a regular file from a specified range.
-    pub async unsafe fn open_file_at_range(&self, range: Range<u64>) -> io::Result<FileEntry<T>> {
+    pub async unsafe fn open_file_at_range(
+        &self,
+        entry_range_info: &accessor::EntryRangeInfo,
+    ) -> io::Result<FileEntry<T>> {
         Ok(FileEntry {
-            inner: self.inner.open_file_at_range(range).await?,
+            inner: self.inner.open_file_at_range(entry_range_info).await?,
         })
     }
 
@@ -135,9 +138,9 @@ impl<T: Clone + ReadAt> Accessor<T> {
     }
 
     /// Following a hardlink.
-    pub async fn follow_hardlink(&self, link: &Hardlink) -> io::Result<FileEntry<T>> {
+    pub async fn follow_hardlink(&self, entry: &FileEntry<T>) -> io::Result<FileEntry<T>> {
         Ok(FileEntry {
-            inner: self.inner.follow_hardlink(link).await?,
+            inner: self.inner.follow_hardlink(&entry.inner).await?,
         })
     }
 }
@@ -228,8 +231,8 @@ impl<T: Clone + ReadAt> FileEntry<T> {
 
     /// Exposed for raw by-offset access methods (use with `open_dir_at_end`).
     #[inline]
-    pub fn entry_range(&self) -> Range<u64> {
-        self.inner.entry_range()
+    pub fn entry_range_info(&self) -> &accessor::EntryRangeInfo {
+        self.inner.entry_range_info()
     }
 }
 
@@ -297,8 +300,8 @@ impl<'a, T: Clone + ReadAt> DirEntry<'a, T> {
 
     /// Exposed for raw by-offset access methods.
     #[inline]
-    pub fn entry_range(&self) -> Range<u64> {
-        self.inner.entry_range()
+    pub fn entry_range_info(&self) -> &accessor::EntryRangeInfo {
+        self.inner.entry_range_info()
     }
 }
 

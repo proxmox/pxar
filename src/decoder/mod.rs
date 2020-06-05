@@ -151,10 +151,10 @@ async fn seq_read_entry<T: SeqRead + ?Sized, E: Endian>(input: &mut T) -> io::Re
 /// We use `async fn` to implement the decoder state machine so that we can easily plug in both
 /// synchronous or `async` I/O objects in as input.
 pub(crate) struct DecoderImpl<T> {
-    input: T,
-    current_header: Header,
+    pub(crate) input: T,
+    pub(crate) current_header: Header,
     entry: Entry,
-    path_lengths: Vec<usize>,
+    pub(crate) path_lengths: Vec<usize>,
     state: State,
     with_goodbye_tables: bool,
 }
@@ -180,7 +180,7 @@ enum State {
 /// of the entry we stop.
 /// Note that if we're in a directory, we stopped at the beginning of its contents.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum ItemResult {
+pub(crate) enum ItemResult {
     /// We parsed an "attribute" item and should continue parsing.
     Attribute,
 
@@ -391,12 +391,14 @@ impl<I: SeqRead> DecoderImpl<I> {
             .ok_or_else(|| io_format_err!("unexpected EOF"))
     }
 
+    // NOTE: This behavior method is also recreated in the accessor's `get_decoder_at_filename`
+    // function! Keep in mind when changing!
     async fn read_next_item(&mut self) -> io::Result<ItemResult> {
         self.read_next_header().await?;
         self.read_current_item().await
     }
 
-    async fn read_next_header(&mut self) -> io::Result<()> {
+    pub(crate) async fn read_next_header(&mut self) -> io::Result<()> {
         let dest = unsafe {
             std::slice::from_raw_parts_mut(
                 &mut self.current_header as *mut Header as *mut u8,
@@ -408,7 +410,7 @@ impl<I: SeqRead> DecoderImpl<I> {
     }
 
     /// Read the next item, the header is already loaded.
-    async fn read_current_item(&mut self) -> io::Result<ItemResult> {
+    pub(crate) async fn read_current_item(&mut self) -> io::Result<ItemResult> {
         match self.current_header.htype {
             format::PXAR_XATTR => {
                 let xattr = self.read_xattr().await?;
