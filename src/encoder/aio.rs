@@ -5,7 +5,7 @@ use std::path::Path;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use crate::encoder::{self, SeqWrite};
+use crate::encoder::{self, SeqWrite, LinkOffset};
 use crate::format;
 use crate::Metadata;
 
@@ -138,7 +138,7 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
         metadata: &Metadata,
         file_name: PF,
         target: PT,
-    ) -> io::Result<()> {
+    ) -> io::Result<LinkOffset> {
         self.inner
             .add_symlink(metadata, file_name.as_ref(), target.as_ref())
             .await
@@ -149,7 +149,7 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
         &mut self,
         file_name: PF,
         target: PT,
-        offset: u64,
+        offset: LinkOffset,
     ) -> io::Result<()> {
         self.inner
             .add_hardlink(file_name.as_ref(), target.as_ref(), offset)
@@ -162,7 +162,7 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
         metadata: &Metadata,
         file_name: P,
         device: format::Device,
-    ) -> io::Result<()> {
+    ) -> io::Result<LinkOffset> {
         self.inner
             .add_device(metadata, file_name.as_ref(), device)
             .await
@@ -173,7 +173,7 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
         &mut self,
         metadata: &Metadata,
         file_name: P,
-    ) -> io::Result<()> {
+    ) -> io::Result<LinkOffset> {
         self.inner.add_fifo(metadata, file_name.as_ref()).await
     }
 
@@ -182,7 +182,7 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
         &mut self,
         metadata: &Metadata,
         file_name: P,
-    ) -> io::Result<()> {
+    ) -> io::Result<LinkOffset> {
         self.inner.add_socket(metadata, file_name.as_ref()).await
     }
 }
@@ -190,6 +190,23 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
 #[repr(transparent)]
 pub struct File<'a> {
     inner: encoder::FileImpl<'a>,
+}
+
+impl<'a> File<'a> {
+    /// Get the file offset to be able to reference it with `add_hardlink`.
+    pub fn file_offset(&self) -> LinkOffset {
+        self.inner.file_offset()
+    }
+
+    /// Write file data for the current file entry in a pxar archive.
+    pub async fn write(&mut self, data: &[u8]) -> io::Result<usize> {
+        self.inner.write(data).await
+    }
+
+    /// Completely write file data for the current file entry in a pxar archive.
+    pub async fn write_all(&mut self, data: &[u8]) -> io::Result<()> {
+        self.inner.write_all(data).await
+    }
 }
 
 #[cfg(feature = "futures-io")]

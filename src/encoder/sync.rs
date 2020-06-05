@@ -6,7 +6,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use crate::decoder::sync::StandardReader;
-use crate::encoder::{self, SeqWrite};
+use crate::encoder::{self, SeqWrite, LinkOffset};
 use crate::format;
 use crate::util::poll_result_once;
 use crate::Metadata;
@@ -84,7 +84,7 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
         file_name: P,
         file_size: u64,
         content: &mut dyn io::Read,
-    ) -> io::Result<()> {
+    ) -> io::Result<LinkOffset> {
         poll_result_once(self.inner.add_file(
             metadata,
             file_name.as_ref(),
@@ -119,7 +119,7 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
         metadata: &Metadata,
         file_name: PF,
         target: PT,
-    ) -> io::Result<()> {
+    ) -> io::Result<LinkOffset> {
         poll_result_once(
             self.inner
                 .add_symlink(metadata, file_name.as_ref(), target.as_ref()),
@@ -131,7 +131,7 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
         &mut self,
         file_name: PF,
         target: PT,
-        offset: u64,
+        offset: LinkOffset,
     ) -> io::Result<()> {
         poll_result_once(self.inner.add_hardlink(file_name.as_ref(), target.as_ref(), offset))
     }
@@ -142,7 +142,7 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
         metadata: &Metadata,
         file_name: P,
         device: format::Device,
-    ) -> io::Result<()> {
+    ) -> io::Result<LinkOffset> {
         poll_result_once(self.inner.add_device(metadata, file_name.as_ref(), device))
     }
 
@@ -151,7 +151,7 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
         &mut self,
         metadata: &Metadata,
         file_name: P,
-    ) -> io::Result<()> {
+    ) -> io::Result<LinkOffset> {
         poll_result_once(self.inner.add_fifo(metadata, file_name.as_ref()))
     }
 
@@ -160,7 +160,7 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
         &mut self,
         metadata: &Metadata,
         file_name: P,
-    ) -> io::Result<()> {
+    ) -> io::Result<LinkOffset> {
         poll_result_once(self.inner.add_socket(metadata, file_name.as_ref()))
     }
 }
@@ -168,6 +168,13 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
 #[repr(transparent)]
 pub struct File<'a> {
     inner: encoder::FileImpl<'a>,
+}
+
+impl<'a> File<'a> {
+    /// Get the file offset to be able to reference it with `add_hardlink`.
+    pub fn file_offset(&self) -> LinkOffset {
+        self.inner.file_offset()
+    }
 }
 
 impl<'a> io::Write for File<'a> {

@@ -23,6 +23,17 @@ pub mod sync;
 #[doc(inline)]
 pub use sync::Encoder;
 
+/// File reference used to create hard links.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub struct LinkOffset(u64);
+
+impl LinkOffset {
+    #[inline]
+    pub fn raw(self) -> u64 {
+        self.0
+    }
+}
+
 /// Sequential write interface used by the encoder's state machine.
 ///
 /// This is our internal writer trait which is available for `std::io::Write` types in the
@@ -310,13 +321,14 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         })
     }
 
+    /// Return a file offset usable with `add_hardlink`.
     pub async fn add_file(
         &mut self,
         metadata: &Metadata,
         file_name: &Path,
         file_size: u64,
         content: &mut dyn SeqRead,
-    ) -> io::Result<()> {
+    ) -> io::Result<LinkOffset> {
         let mut file = self.create_file(metadata, file_name, file_size).await?;
         let mut buf = crate::util::vec_new(4096);
         loop {
@@ -327,15 +339,16 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
                 file.write_all(&buf[..got]).await?;
             }
         }
-        Ok(())
+        Ok(file.file_offset())
     }
 
+    /// Return a file offset usable with `add_hardlink`.
     pub async fn add_symlink(
         &mut self,
         metadata: &Metadata,
         file_name: &Path,
         target: &Path,
-    ) -> io::Result<()> {
+    ) -> io::Result<LinkOffset> {
         self.add_file_entry(
             Some(metadata),
             file_name,
@@ -344,14 +357,15 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         .await
     }
 
+    /// Return a file offset usable with `add_hardlink`.
     pub async fn add_hardlink(
         &mut self,
         file_name: &Path,
         target: &Path,
-        offset: u64,
+        offset: LinkOffset,
     ) -> io::Result<()> {
         let hardlink = format::Hardlink {
-            offset,
+            offset: offset.0,
             data: target.as_os_str().as_bytes().to_vec(),
         };
         let hardlink = unsafe {
@@ -360,20 +374,22 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
                 size_of::<format::Hardlink>(),
             )
         };
-        self.add_file_entry(
+        let _this_offset: LinkOffset = self.add_file_entry(
             None,
             file_name,
             Some((format::PXAR_HARDLINK, hardlink)),
         )
-        .await
+        .await?;
+        Ok(())
     }
 
+    /// Return a file offset usable with `add_hardlink`.
     pub async fn add_device(
         &mut self,
         metadata: &Metadata,
         file_name: &Path,
         device: format::Device,
-    ) -> io::Result<()> {
+    ) -> io::Result<LinkOffset> {
         if !metadata.is_device() {
             io_bail!("entry added via add_device must have a device mode in its metadata");
         }
@@ -393,7 +409,8 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         .await
     }
 
-    pub async fn add_fifo(&mut self, metadata: &Metadata, file_name: &Path) -> io::Result<()> {
+    /// Return a file offset usable with `add_hardlink`.
+    pub async fn add_fifo(&mut self, metadata: &Metadata, file_name: &Path) -> io::Result<LinkOffset> {
         if !metadata.is_fifo() {
             io_bail!("entry added via add_device must be of type fifo in its metadata");
         }
@@ -401,7 +418,8 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         self.add_file_entry(Some(metadata), file_name, None).await
     }
 
-    pub async fn add_socket(&mut self, metadata: &Metadata, file_name: &Path) -> io::Result<()> {
+    /// Return a file offset usable with `add_hardlink`.
+    pub async fn add_socket(&mut self, metadata: &Metadata, file_name: &Path) -> io::Result<LinkOffset> {
         if !metadata.is_socket() {
             io_bail!("entry added via add_device must be of type socket in its metadata");
         }
@@ -409,12 +427,13 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         self.add_file_entry(Some(metadata), file_name, None).await
     }
 
+    /// Return a file offset usable with `add_hardlink`.
     async fn add_file_entry(
         &mut self,
         metadata: Option<&Metadata>,
         file_name: &Path,
         entry_htype_data: Option<(u64, &[u8])>,
-    ) -> io::Result<()> {
+    ) -> io::Result<LinkOffset> {
         self.check()?;
 
         let file_offset = seq_write_position(&mut self.output).await?;
@@ -434,7 +453,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
             size: end_offset - file_offset,
         });
 
-        Ok(())
+        Ok(LinkOffset(file_offset))
     }
 
     /// Helper
@@ -673,6 +692,11 @@ impl<'a> Drop for FileImpl<'a> {
 }
 
 impl<'a> FileImpl<'a> {
+    /// Get the file offset to be able to reference it with `add_hardlink`.
+    pub fn file_offset(&self) -> LinkOffset {
+        LinkOffset(self.goodbye_item.offset)
+    }
+
     fn check_remaining(&self, size: usize) -> io::Result<()> {
         if size as u64 > self.remaining_size {
             io_bail!("attempted to write more than previously allocated");
