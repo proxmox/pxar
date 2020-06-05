@@ -290,6 +290,7 @@ impl AsRef<OsStr> for Symlink {
 
 #[derive(Clone, Debug)]
 pub struct Hardlink {
+    pub offset: u64,
     pub data: Vec<u8>,
 }
 

@@ -131,8 +131,9 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
         &mut self,
         file_name: PF,
         target: PT,
+        offset: u64,
     ) -> io::Result<()> {
-        poll_result_once(self.inner.add_hardlink(file_name.as_ref(), target.as_ref()))
+        poll_result_once(self.inner.add_hardlink(file_name.as_ref(), target.as_ref(), offset))
     }
 
     /// Add a device node to the archive.

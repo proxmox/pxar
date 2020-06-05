@@ -336,26 +336,34 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         file_name: &Path,
         target: &Path,
     ) -> io::Result<()> {
-        self.add_link(Some(metadata), file_name, target, format::PXAR_SYMLINK)
-            .await
+        self.add_file_entry(
+            Some(metadata),
+            file_name,
+            Some((format::PXAR_SYMLINK, target.as_os_str().as_bytes())),
+        )
+        .await
     }
 
-    pub async fn add_hardlink(&mut self, file_name: &Path, target: &Path) -> io::Result<()> {
-        self.add_link(None, file_name, target, format::PXAR_HARDLINK)
-            .await
-    }
-
-    async fn add_link(
+    pub async fn add_hardlink(
         &mut self,
-        metadata: Option<&Metadata>,
         file_name: &Path,
         target: &Path,
-        htype: u64,
+        offset: u64,
     ) -> io::Result<()> {
+        let hardlink = format::Hardlink {
+            offset,
+            data: target.as_os_str().as_bytes().to_vec(),
+        };
+        let hardlink = unsafe {
+            std::slice::from_raw_parts(
+                &hardlink as *const format::Hardlink as *const u8,
+                size_of::<format::Hardlink>(),
+            )
+        };
         self.add_file_entry(
-            metadata,
+            None,
             file_name,
-            Some((htype, target.as_os_str().as_bytes())),
+            Some((format::PXAR_HARDLINK, hardlink)),
         )
         .await
     }

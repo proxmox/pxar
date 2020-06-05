@@ -149,9 +149,10 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
         &mut self,
         file_name: PF,
         target: PT,
+        offset: u64,
     ) -> io::Result<()> {
         self.inner
-            .add_hardlink(file_name.as_ref(), target.as_ref())
+            .add_hardlink(file_name.as_ref(), target.as_ref(), offset)
             .await
     }
 

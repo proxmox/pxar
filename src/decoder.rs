@@ -562,8 +562,12 @@ impl<I: SeqRead> DecoderImpl<I> {
     }
 
     async fn read_hardlink(&mut self) -> io::Result<format::Hardlink> {
-        let data = self.read_entry_as_bytes().await?;
-        Ok(format::Hardlink { data })
+        let offset: u64 = self.read_simple_entry("hardlink offset").await?;
+        let size =
+            usize::try_from(self.current_header.content_size()).map_err(io_err_other)?
+            - size_of::<u64>();
+        let data = seq_read_exact_data(&mut self.input, size).await?;
+        Ok(format::Hardlink { offset, data })
     }
 
     async fn read_device(&mut self) -> io::Result<format::Device> {
