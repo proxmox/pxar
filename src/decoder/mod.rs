@@ -317,6 +317,9 @@ impl<I: SeqRead> DecoderImpl<I> {
         if data.is_empty() {
             io_bail!("illegal path found (empty)");
         }
+        if data.contains(&b'/') {
+            io_bail!("illegal path found (contains slashes, this is a security concern)");
+        }
 
         let path = PathBuf::from(OsString::from_vec(data));
         self.set_path(&path)?;
