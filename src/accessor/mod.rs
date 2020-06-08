@@ -203,13 +203,18 @@ async fn get_decoder_at_filename<T: ReadAt>(
     decoder.path_lengths.push(0);
     decoder.read_next_header().await?;
     if decoder.current_header.htype != format::PXAR_FILENAME {
-        io_bail!("expected filename entry, got {:?}", decoder.current_header.htype);
+        io_bail!(
+            "expected filename entry, got {:?}",
+            decoder.current_header.htype
+        );
     }
     if decoder.read_current_item().await? != decoder::ItemResult::Entry {
         // impossible, since we checked the header type above for a "proper" error message
         io_bail!("unexpected decoder state");
     }
-    let entry_offset = decoder::seq_read_position(&mut decoder.input).await.transpose()?
+    let entry_offset = decoder::seq_read_position(&mut decoder.input)
+        .await
+        .transpose()?
         .ok_or_else(|| io_format_err!("reader provided no offset"))?;
     Ok((decoder, entry_offset))
 }
@@ -245,7 +250,8 @@ impl<T: Clone + ReadAt> AccessorImpl<T> {
             self.input.clone(),
             entry_range_info.entry_range.clone(),
             PathBuf::new(),
-        ).await?;
+        )
+        .await?;
         let entry = decoder
             .next()
             .await
@@ -283,12 +289,9 @@ impl<T: Clone + ReadAt> AccessorImpl<T> {
 
         let link_offset = entry_file_offset - link_offset;
 
-        let (mut decoder, entry_offset) = get_decoder_at_filename(
-            self.input.clone(),
-            link_offset..self.size,
-            PathBuf::new(),
-        )
-        .await?;
+        let (mut decoder, entry_offset) =
+            get_decoder_at_filename(self.input.clone(), link_offset..self.size, PathBuf::new())
+                .await?;
 
         let entry = decoder
             .next()
@@ -757,7 +760,10 @@ impl<'a, T: Clone + ReadAt> DirEntryImpl<'a, T> {
     async fn decode_entry(&self) -> io::Result<FileEntryImpl<T>> {
         let (entry, _decoder) = self
             .dir
-            .decode_one_entry(self.entry_range_info.entry_range.clone(), Some(&self.file_name))
+            .decode_one_entry(
+                self.entry_range_info.entry_range.clone(),
+                Some(&self.file_name),
+            )
             .await?;
 
         Ok(FileEntryImpl {

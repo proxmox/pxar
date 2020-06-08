@@ -246,13 +246,12 @@ impl From<&std::fs::Metadata> for Entry {
             .mode(meta.mode() as u64);
 
         let this = match meta.modified() {
-            Ok(mtime) => {
-                this.mtime(mtime
+            Ok(mtime) => this.mtime(
+                mtime
                     .duration_since(std::time::SystemTime::UNIX_EPOCH)
                     .map(|dur| dur.as_nanos() as u64)
-                    .unwrap_or(0u64)
-                )
-            }
+                    .unwrap_or(0u64),
+            ),
             Err(_) => this,
         };
 
