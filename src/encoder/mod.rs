@@ -371,18 +371,13 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
             io_bail!("invalid hardlink offset, can only point to prior files");
         }
 
-        let hardlink = format::Hardlink {
-            offset: current_offset - target_offset.0,
-            data: target.as_os_str().as_bytes().to_vec(),
-        };
-        let hardlink = unsafe {
-            std::slice::from_raw_parts(
-                &hardlink as *const format::Hardlink as *const u8,
-                size_of::<format::Hardlink>(),
-            )
-        };
+        let offset_bytes = (current_offset - target_offset.0).to_le_bytes();
+        let target_bytes = target.as_os_str().as_bytes();
+        let mut hardlink = Vec::with_capacity(offset_bytes.len() + target_bytes.len());
+        hardlink.extend(&offset_bytes);
+        hardlink.extend(target_bytes);
         let _this_offset: LinkOffset = self
-            .add_file_entry(None, file_name, Some((format::PXAR_HARDLINK, hardlink)))
+            .add_file_entry(None, file_name, Some((format::PXAR_HARDLINK, &hardlink)))
             .await?;
         Ok(())
     }
