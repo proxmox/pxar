@@ -600,9 +600,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
     }
 
     async fn encode_filename(&mut self, file_name: &[u8]) -> io::Result<()> {
-        if file_name.contains(&b'/') {
-            io_bail!("slash in file name not permitted");
-        }
+        crate::util::validate_filename(file_name)?;
         seq_write_pxar_entry_zero(&mut self.output, format::PXAR_FILENAME, file_name).await
     }
 

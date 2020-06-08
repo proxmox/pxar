@@ -622,13 +622,7 @@ impl<T: Clone + ReadAt> DirectoryImpl<T> {
             io_bail!("invalid file name (missing terminating zero)");
         }
 
-        if path.is_empty() {
-            io_bail!("invalid empty file name");
-        }
-
-        if path.contains(&b'/') {
-            io_bail!("illegal path found (contains slashes, this is a security concern)");
-        }
+        crate::util::validate_filename(&path)?;
 
         let file_name = PathBuf::from(OsString::from_vec(path));
         format::check_file_name(&file_name)?;

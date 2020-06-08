@@ -113,3 +113,23 @@ unsafe fn forbid_wake(_: *const ()) {
 }
 
 unsafe fn ignore_drop(_: *const ()) {}
+
+pub fn validate_filename(name: &[u8]) -> io::Result<()> {
+    if name.is_empty() {
+        io_bail!("illegal path found (empty)");
+    }
+
+    if name.contains(&b'/') {
+        io_bail!("illegal path found (contains slashes, this is a security concern)");
+    }
+
+    if name == b"." {
+        io_bail!("illegal path found: '.'");
+    }
+
+    if name == b".." {
+        io_bail!("illegal path found: '..'");
+    }
+
+    Ok(())
+}

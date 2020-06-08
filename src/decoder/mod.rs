@@ -314,12 +314,8 @@ impl<I: SeqRead> DecoderImpl<I> {
         if data.pop() != Some(0) {
             io_bail!("illegal path found (missing terminating zero)");
         }
-        if data.is_empty() {
-            io_bail!("illegal path found (empty)");
-        }
-        if data.contains(&b'/') {
-            io_bail!("illegal path found (contains slashes, this is a security concern)");
-        }
+
+        crate::util::validate_filename(&data)?;
 
         let path = PathBuf::from(OsString::from_vec(data));
         self.set_path(&path)?;
