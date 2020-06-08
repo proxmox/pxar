@@ -2,11 +2,13 @@
 //!
 //! This is the implementation used by both the synchronous and async pxar wrappers.
 
+use std::cell::RefCell;
 use std::io;
 use std::mem::{forget, size_of, size_of_val, take};
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 use std::pin::Pin;
+use std::rc::Rc;
 use std::task::{Context, Poll};
 
 use endian_trait::Endian;
@@ -229,6 +231,10 @@ pub(crate) struct EncoderImpl<'a, T: SeqWrite + 'a> {
     state: EncoderState,
     parent: Option<&'a mut EncoderState>,
     finished: bool,
+
+    /// Since only the "current" entry can be actively writing files, we share the file copy
+    /// buffer.
+    file_copy_buffer: Rc<RefCell<Vec<u8>>>,
 }
 
 impl<'a, T: SeqWrite + 'a> Drop for EncoderImpl<'a, T> {
@@ -256,6 +262,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
             state: EncoderState::default(),
             parent: None,
             finished: false,
+            file_copy_buffer: Rc::new(RefCell::new(crate::util::vec_new(1024 * 1024))),
         };
 
         this.encode_metadata(metadata).await?;
@@ -329,10 +336,11 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         file_size: u64,
         content: &mut dyn SeqRead,
     ) -> io::Result<LinkOffset> {
+        let buf = Rc::clone(&self.file_copy_buffer);
         let mut file = self.create_file(metadata, file_name, file_size).await?;
-        let mut buf = crate::util::vec_new(4096);
+        let mut buf = buf.borrow_mut();
         loop {
-            let got = decoder::seq_read(&mut *content, &mut buf).await?;
+            let got = decoder::seq_read(&mut *content, &mut buf[..]).await?;
             if got == 0 {
                 break;
             } else {
@@ -501,6 +509,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
             },
             parent: Some(&mut self.state),
             finished: false,
+            file_copy_buffer: Rc::clone(&self.file_copy_buffer),
         })
     }
 
