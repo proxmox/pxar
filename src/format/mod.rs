@@ -243,8 +243,18 @@ impl From<&std::fs::Metadata> for Entry {
         let this = this
             .uid(meta.uid())
             .gid(meta.gid())
-            .mode(meta.mode() as u64)
-            .mtime(meta.mtime() as u64);
+            .mode(meta.mode() as u64);
+
+        let this = match meta.modified() {
+            Ok(mtime) => {
+                this.mtime(mtime
+                    .duration_since(std::time::SystemTime::UNIX_EPOCH)
+                    .map(|dur| dur.as_nanos() as u64)
+                    .unwrap_or(0u64)
+                )
+            }
+            Err(_) => this,
+        };
 
         let file_type = meta.file_type();
         let mode = this.mode;
