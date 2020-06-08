@@ -1,3 +1,9 @@
+rust-pxar (0.1.5-1) pve; urgency=medium
+
+  * fixup hardlink encoding
+
+ -- Proxmox Support Team <support@proxmox.com>  Mon, 08 Jun 2020 10:08:06 +0200
+
 rust-pxar (0.1.4-1) pve; urgency=medium
 
   * remove LinkOffset from some file types
