@@ -1,11 +1,14 @@
+use std::collections::HashMap;
 use std::fs::File;
+use std::path::{Path, PathBuf};
 use std::io::{self, Read, Write};
 use std::os::unix::ffi::OsStrExt;
+use std::os::linux::fs::MetadataExt;
 
 use anyhow::{bail, format_err, Error};
 
 use pxar::accessor::Accessor;
-use pxar::encoder::{Encoder, SeqWrite};
+use pxar::encoder::{Encoder, SeqWrite, LinkOffset};
 use pxar::Metadata;
 
 fn main() -> Result<(), Error> {
@@ -27,8 +30,9 @@ fn main() -> Result<(), Error> {
     let file = args
         .next()
         .ok_or_else(|| format_err!("expected a file name"))?;
-    let accessor = Accessor::open(file)?;
-    let dir = accessor.open_root_ref()?;
+    let file = std::fs::File::open(file)?;
+    let accessor = Accessor::from_file_ref(&file)?;
+    let dir = accessor.open_root()?;
 
     let mut buf = Vec::new();
 
@@ -47,6 +51,11 @@ fn main() -> Result<(), Error> {
             }
         } else if cmd == "cat" {
             buf.clear();
+            let entry = if entry.is_hardlink() {
+                accessor.follow_hardlink(&entry)?
+            } else {
+                entry
+            };
             entry.contents()?.read_to_end(&mut buf)?;
             io::stdout().write_all(&buf)?;
         } else {
@@ -55,6 +64,12 @@ fn main() -> Result<(), Error> {
     }
 
     Ok(())
+}
+
+#[derive(Eq, PartialEq, Hash)]
+struct HardLinkInfo {
+    st_dev: u64,
+    st_ino: u64,
 }
 
 fn cmd_create(mut args: std::env::ArgsOs) -> Result<(), Error> {
@@ -70,12 +85,14 @@ fn cmd_create(mut args: std::env::ArgsOs) -> Result<(), Error> {
         bail!("too many parameters, there can only be a single root directory in a pxar archive");
     }
 
+    let dir_path = Path::new(&dir_path);
+
     // we use "simple" directory traversal without `openat()`
     let meta = Metadata::from(std::fs::metadata(&dir_path)?);
-    let dir = std::fs::read_dir(dir_path)?;
+    let dir = std::fs::read_dir(&dir_path)?;
 
     let mut encoder = Encoder::create(file, &meta)?;
-    add_directory(&mut encoder, dir)?;
+    add_directory(&mut encoder, dir, &dir_path, &mut HashMap::new())?;
     encoder.finish()?;
 
     Ok(())
@@ -84,32 +101,61 @@ fn cmd_create(mut args: std::env::ArgsOs) -> Result<(), Error> {
 fn add_directory<'a, T: SeqWrite + 'a>(
     encoder: &mut Encoder<T>,
     dir: std::fs::ReadDir,
+    root_path: &Path,
+    hardlinks: &mut HashMap<HardLinkInfo, (PathBuf, LinkOffset)>,
 ) -> Result<(), Error> {
+    let mut file_list = Vec::new();
     for file in dir {
         let file = file?;
         let file_name = file.file_name();
         if file_name == "." || file_name == ".." {
             continue;
         }
+        file_list.push((
+            file_name.to_os_string(),
+            file.path().to_path_buf(),
+            file.file_type()?,
+            file.metadata()?,
+        ));
+    }
 
-        println!("{:?}", file.path());
+    file_list.sort_unstable_by(|a, b| (a.0).cmp(&b.0));
 
-        let file_type = file.file_type()?;
-        let file_meta = file.metadata()?;
+    for (file_name, file_path, file_type, file_meta) in file_list {
+        println!("{:?}", file_path);
+
         let meta = Metadata::from(&file_meta);
         if file_type.is_dir() {
             let mut dir = encoder.create_directory(file_name, &meta)?;
-            add_directory(&mut dir, std::fs::read_dir(file.path())?)?;
+            add_directory(&mut dir, std::fs::read_dir(file_path)?, root_path, &mut *hardlinks)?;
             dir.finish()?;
         } else if file_type.is_symlink() {
             todo!("symlink handling");
         } else if file_type.is_file() {
-            encoder.add_file(
+            let link_info = HardLinkInfo {
+                st_dev: file_meta.st_dev(),
+                st_ino: file_meta.st_ino(),
+            };
+
+            if file_meta.st_nlink() > 1 {
+                if let Some((path, offset)) = hardlinks.get(&link_info) {
+                    eprintln!("Adding hardlink {:?} => {:?}", file_name, path);
+                    encoder.add_hardlink(file_name, path, *offset)?;
+                    continue;
+                }
+            }
+
+            let offset: LinkOffset = encoder.add_file(
                 &meta,
                 file_name,
                 file_meta.len(),
-                &mut File::open(file.path())?,
+                &mut File::open(&file_path)?,
             )?;
+
+            if file_meta.st_nlink() > 1 {
+                let file_path = file_path.strip_prefix(root_path)?.to_path_buf();
+                hardlinks.insert(link_info, (file_path, offset));
+            }
         } else {
             todo!("special file handling");
         }
