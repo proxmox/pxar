@@ -1,3 +1,11 @@
+rust-pxar (0.1.6-1) pve; urgency=medium
+
+  * refuse illegal file names in encoder/decoder/accessor
+
+  * use a shared 1M file copy buffer
+
+ -- Proxmox Support Team <support@proxmox.com>  Mon, 08 Jun 2020 13:55:14 +0200
+
 rust-pxar (0.1.5-1) pve; urgency=medium
 
   * fixup hardlink encoding
