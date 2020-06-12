@@ -110,7 +110,7 @@ where
 async fn seq_read_exact<T: SeqRead + ?Sized>(input: &mut T, buf: &mut [u8]) -> io::Result<()> {
     match seq_read_exact_or_eof(input, buf).await? {
         Some(()) => Ok(()),
-        None => io_bail!("unexpected eof"),
+        None => io_bail!("unexpected EOF"),
     }
 }
 
@@ -143,7 +143,7 @@ where
 async fn seq_read_entry<T: SeqRead + ?Sized, E: Endian>(input: &mut T) -> io::Result<E> {
     seq_read_entry_or_eof(input)
         .await?
-        .ok_or_else(|| io_format_err!("unexepcted EOF"))
+        .ok_or_else(|| io_format_err!("unexpected EOF"))
 }
 
 /// The decoder state machine implementation.
