@@ -350,6 +350,8 @@ impl<I: SeqRead> DecoderImpl<I> {
             Some(header) => header,
         };
 
+        header.check_header_size()?;
+
         if header.htype == format::PXAR_HARDLINK {
             // The only "dangling" header without an 'Entry' in front of it because it does not
             // carry its own metadata.
@@ -405,6 +407,8 @@ impl<I: SeqRead> DecoderImpl<I> {
             )
         };
         seq_read_exact(&mut self.input, dest).await?;
+        self.current_header.check_header_size()?;
+
         Ok(())
     }
 

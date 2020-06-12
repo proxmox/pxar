@@ -93,6 +93,41 @@ impl Header {
     pub fn content_size(&self) -> u64 {
         self.full_size() - (size_of::<Self>() as u64)
     }
+
+    #[inline]
+    pub fn max_content_size(&self) -> u64 {
+        match self.htype {
+            // + null-termination
+            PXAR_FILENAME => crate::util::MAX_FILENAME_LEN + 1,
+            // + null-termination
+            PXAR_SYMLINK => crate::util::MAX_PATH_LEN + 1,
+            // + null-termination + offset
+            PXAR_HARDLINK => crate::util::MAX_PATH_LEN + 1 + (size_of::<u64>() as u64),
+            PXAR_DEVICE => size_of::<Device>() as u64,
+            PXAR_XATTR | PXAR_FCAPS => crate::util::MAX_XATTR_LEN,
+            PXAR_ACL_USER | PXAR_ACL_DEFAULT_USER => size_of::<acl::User>() as u64,
+            PXAR_ACL_GROUP | PXAR_ACL_DEFAULT_GROUP => size_of::<acl::Group>() as u64,
+            PXAR_ACL_DEFAULT => size_of::<acl::Default>() as u64,
+            PXAR_ACL_GROUP_OBJ => size_of::<acl::GroupObject> as u64,
+            PXAR_QUOTA_PROJID => size_of::<QuotaProjectId>() as u64,
+            PXAR_ENTRY => size_of::<Entry>() as u64,
+            PXAR_PAYLOAD | PXAR_GOODBYE => u64::MAX - (size_of::<Self>() as u64),
+            _ => u64::MAX - (size_of::<Self>() as u64),
+        }
+    }
+
+    #[inline]
+    pub fn check_header_size(&self) -> io::Result<()> {
+        if self.full_size() < size_of::<Header>() as u64 {
+            io_bail!("invalid header {} - too small ({})", self, self.full_size());
+        }
+
+        if self.content_size() > self.max_content_size() {
+            io_bail!("invalid content size ({} > {}) of entry with {}", self.content_size(), self.max_content_size(), self);
+        }
+        Ok(())
+    }
+}
 }
 
 #[derive(Clone, Debug, Default, Endian)]

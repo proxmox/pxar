@@ -114,6 +114,12 @@ unsafe fn forbid_wake(_: *const ()) {
 
 unsafe fn ignore_drop(_: *const ()) {}
 
+pub const MAX_PATH_LEN:u64 = 4 * 1024;
+// let's play it safe
+pub const MAX_FILENAME_LEN:u64 = MAX_PATH_LEN;
+// name + attr
+pub const MAX_XATTR_LEN:u64 = 255 + 64*1024;
+
 pub fn validate_filename(name: &[u8]) -> io::Result<()> {
     if name.is_empty() {
         io_bail!("illegal path found (empty)");
@@ -129,6 +135,10 @@ pub fn validate_filename(name: &[u8]) -> io::Result<()> {
 
     if name == b".." {
         io_bail!("illegal path found: '..'");
+    }
+
+    if (name.len() as u64) > MAX_FILENAME_LEN {
+        io_bail!("filename too long (> {})", MAX_FILENAME_LEN);
     }
 
     Ok(())

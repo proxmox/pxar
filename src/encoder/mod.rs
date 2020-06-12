@@ -137,9 +137,12 @@ async fn seq_write_pxar_entry<T>(output: &mut T, htype: u64, data: &[u8]) -> io:
 where
     T: SeqWrite + ?Sized,
 {
+    let header = format::Header::with_content_size(htype, data.len() as u64);
+    header.check_header_size()?;
+
     seq_write_struct(
         &mut *output,
-        format::Header::with_content_size(htype, data.len() as u64),
+        header,
     )
     .await?;
     seq_write_all(output, data).await
@@ -151,9 +154,12 @@ async fn seq_write_pxar_entry_zero<T>(output: &mut T, htype: u64, data: &[u8]) -
 where
     T: SeqWrite + ?Sized,
 {
+    let header = format::Header::with_content_size(htype, 1 + data.len() as u64);
+    header.check_header_size()?;
+
     seq_write_struct(
         &mut *output,
-        format::Header::with_content_size(htype, 1 + data.len() as u64),
+        header,
     )
     .await?;
     seq_write_all(&mut *output, data).await?;
@@ -306,9 +312,12 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         let file_offset = seq_write_position(&mut self.output).await?;
         self.start_file_do(Some(metadata), file_name).await?;
 
+        let header = format::Header::with_content_size(format::PXAR_PAYLOAD, file_size);
+        header.check_header_size()?;
+
         seq_write_struct(
             &mut self.output,
-            format::Header::with_content_size(format::PXAR_PAYLOAD, file_size),
+            header,
         )
         .await?;
 
