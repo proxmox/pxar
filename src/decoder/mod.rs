@@ -279,9 +279,9 @@ impl<I: SeqRead> DecoderImpl<I> {
                         continue;
                     }
                 }
-                h => io_bail!(
-                    "expected filename or directory-goodbye pxar entry, got: {:x}",
-                    h
+                _ => io_bail!(
+                    "expected filename or directory-goodbye pxar entry, got: {}",
+                    self.current_header,
                 ),
             }
         }
@@ -380,8 +380,8 @@ impl<I: SeqRead> DecoderImpl<I> {
             Ok(Some(self.entry.take()))
         } else {
             io_bail!(
-                "expected pxar entry of type 'Entry', got: {:x}",
-                header.htype
+                "expected pxar entry of type 'Entry', got: {}",
+                header,
             );
         }
     }
@@ -498,7 +498,7 @@ impl<I: SeqRead> DecoderImpl<I> {
                     return Ok(ItemResult::Entry);
                 }
             }
-            _ => io_bail!("unexpected entry type: {:x}", self.current_header.htype),
+            _ => io_bail!("unexpected entry type: {}", self.current_header),
         }
 
         Ok(ItemResult::Attribute)

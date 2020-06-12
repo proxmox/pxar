@@ -7,6 +7,8 @@
 
 use std::cmp::Ordering;
 use std::ffi::{CStr, OsStr};
+use std::fmt;
+use std::fmt::Display;
 use std::io;
 use std::mem::size_of;
 use std::os::unix::ffi::OsStrExt;
@@ -128,6 +130,30 @@ impl Header {
         Ok(())
     }
 }
+
+impl Display for Header {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let readable = match self.htype {
+            PXAR_FILENAME => "FILENAME",
+            PXAR_SYMLINK => "SYMLINK",
+            PXAR_HARDLINK => "HARDLINK",
+            PXAR_DEVICE => "DEVICE",
+            PXAR_XATTR => "XATTR",
+            PXAR_FCAPS => "FCAPS",
+            PXAR_ACL_USER => "ACL_USER",
+            PXAR_ACL_DEFAULT_USER => "ACL_DEFAULT_USER",
+            PXAR_ACL_GROUP => "ACL_GROUP",
+            PXAR_ACL_DEFAULT_GROUP => "ACL_DEFAULT_GROUP",
+            PXAR_ACL_DEFAULT => "ACL_DEFAULT",
+            PXAR_ACL_GROUP_OBJ => "ACL_GROUP_OBJ",
+            PXAR_QUOTA_PROJID => "QUOTA_PROJID",
+            PXAR_ENTRY => "ENTRY",
+            PXAR_PAYLOAD => "PAYLOAD",
+            PXAR_GOODBYE => "GOODBYE",
+            _ => "UNKNOWN",
+        };
+        write!(f, "{} header ({:x})", readable, self.htype)
+    }
 }
 
 #[derive(Clone, Debug, Default, Endian)]

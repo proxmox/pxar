@@ -204,8 +204,8 @@ async fn get_decoder_at_filename<T: ReadAt>(
     decoder.read_next_header().await?;
     if decoder.current_header.htype != format::PXAR_FILENAME {
         io_bail!(
-            "expected filename entry, got {:?}",
-            decoder.current_header.htype
+            "expected filename entry, got {}",
+            decoder.current_header,
         );
     }
     if decoder.read_current_item().await? != decoder::ItemResult::Entry {
@@ -608,7 +608,7 @@ impl<T: Clone + ReadAt> DirectoryImpl<T> {
     async fn read_filename_entry(&self, file_ofs: u64) -> io::Result<(PathBuf, u64)> {
         let head: format::Header = read_entry_at(&self.input, file_ofs).await?;
         if head.htype != format::PXAR_FILENAME {
-            io_bail!("expected PXAR_FILENAME header, found: {:x}", head.htype);
+            io_bail!("expected PXAR_FILENAME header, found: {}", head);
         }
 
         let mut path = read_exact_data_at(
