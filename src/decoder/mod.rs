@@ -75,7 +75,7 @@ impl<'a> SeqRead for &mut (dyn SeqRead + 'a) {
 }
 
 /// awaitable version of `poll_position`.
-pub(crate) async fn seq_read_position<T: SeqRead + ?Sized>(
+async fn seq_read_position<T: SeqRead + ?Sized>(
     input: &mut T,
 ) -> Option<io::Result<u64>> {
     poll_fn(|cx| unsafe { Pin::new_unchecked(&mut *input).poll_position(cx) }).await
@@ -152,9 +152,9 @@ async fn seq_read_entry<T: SeqRead + ?Sized, E: Endian>(input: &mut T) -> io::Re
 /// synchronous or `async` I/O objects in as input.
 pub(crate) struct DecoderImpl<T> {
     pub(crate) input: T,
-    pub(crate) current_header: Header,
+    current_header: Header,
     entry: Entry,
-    pub(crate) path_lengths: Vec<usize>,
+    path_lengths: Vec<usize>,
     state: State,
     with_goodbye_tables: bool,
 }
@@ -220,7 +220,7 @@ impl<I: SeqRead> DecoderImpl<I> {
         self.next_do().await.transpose()
     }
 
-    pub(crate) async fn next_do(&mut self) -> io::Result<Option<Entry>> {
+    async fn next_do(&mut self) -> io::Result<Option<Entry>> {
         loop {
             match self.state {
                 State::Eof => return Ok(None),
@@ -399,7 +399,7 @@ impl<I: SeqRead> DecoderImpl<I> {
         self.read_current_item().await
     }
 
-    pub(crate) async fn read_next_header(&mut self) -> io::Result<()> {
+    async fn read_next_header(&mut self) -> io::Result<()> {
         let dest = unsafe {
             std::slice::from_raw_parts_mut(
                 &mut self.current_header as *mut Header as *mut u8,
@@ -413,7 +413,7 @@ impl<I: SeqRead> DecoderImpl<I> {
     }
 
     /// Read the next item, the header is already loaded.
-    pub(crate) async fn read_current_item(&mut self) -> io::Result<ItemResult> {
+    async fn read_current_item(&mut self) -> io::Result<ItemResult> {
         match self.current_header.htype {
             format::PXAR_XATTR => {
                 let xattr = self.read_xattr().await?;
