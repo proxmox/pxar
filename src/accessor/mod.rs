@@ -199,24 +199,20 @@ async fn get_decoder_at_filename<T: ReadAt>(
     entry_range: Range<u64>,
     path: PathBuf,
 ) -> io::Result<(DecoderImpl<SeqReadAtAdapter<T>>, u64)> {
-    let mut decoder = get_decoder(input, entry_range, path).await?;
-    decoder.path_lengths.push(0);
-    decoder.read_next_header().await?;
-    if decoder.current_header.htype != format::PXAR_FILENAME {
-        io_bail!(
-            "expected filename entry, got {}",
-            decoder.current_header,
-        );
+    // Read the header, it should be a FILENAME, then skip over it and its length:
+    let header: format::Header = read_entry_at(&input, entry_range.start).await?;
+    header.check_header_size()?;
+
+    if header.htype != format::PXAR_FILENAME {
+        io_bail!("expected filename entry, got {:?}", header);
     }
-    if decoder.read_current_item().await? != decoder::ItemResult::Entry {
-        // impossible, since we checked the header type above for a "proper" error message
-        io_bail!("unexpected decoder state");
+
+    let entry_offset = entry_range.start + header.full_size();
+    if entry_offset >= entry_range.end {
+        io_bail!("filename exceeds current file range");
     }
-    let entry_offset = decoder::seq_read_position(&mut decoder.input)
-        .await
-        .transpose()?
-        .ok_or_else(|| io_format_err!("reader provided no offset"))?;
-    Ok((decoder, entry_offset))
+
+    Ok((get_decoder(input, entry_offset..entry_range.end, path).await?, entry_offset))
 }
 
 impl<T: Clone + ReadAt> AccessorImpl<T> {
@@ -297,6 +293,7 @@ impl<T: Clone + ReadAt> AccessorImpl<T> {
             .next()
             .await
             .ok_or_else(|| io_format_err!("unexpected EOF while following a hardlink"))??;
+
         match entry.kind() {
             EntryKind::File { offset: None, .. } => {
                 io_bail!("failed to follow hardlink, reader provided no offsets");
