@@ -1,3 +1,12 @@
+rust-pxar (0.1.7-1) pve; urgency=medium
+
+  * add some safety checks
+
+  * fix search for Entry header in hardlinks (don't mess with internal decoder
+    state for this)
+
+ -- Proxmox Support Team <support@proxmox.com>  Mon, 15 Jun 2020 10:35:27 +0200
+
 rust-pxar (0.1.6-1) pve; urgency=medium
 
   * refuse illegal file names in encoder/decoder/accessor
