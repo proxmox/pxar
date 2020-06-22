@@ -1,3 +1,9 @@
+rust-pxar (0.1.8-1) pve; urgency=medium
+
+  * fix a bug with encoding device files
+
+ -- Proxmox Support Team <support@proxmox.com>  Mon, 22 Jun 2020 11:05:52 +0200
+
 rust-pxar (0.1.7-1) pve; urgency=medium
 
   * add some safety checks
