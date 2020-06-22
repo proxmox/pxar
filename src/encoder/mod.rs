@@ -366,11 +366,15 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         file_name: &Path,
         target: &Path,
     ) -> io::Result<()> {
+        let target = target.as_os_str().as_bytes();
+        let mut data = Vec::with_capacity(target.len() + 1);
+        data.extend(target);
+        data.push(0);
         let _ofs: LinkOffset = self
             .add_file_entry(
                 Some(metadata),
                 file_name,
-                Some((format::PXAR_SYMLINK, target.as_os_str().as_bytes())),
+                Some((format::PXAR_SYMLINK, &data)),
             )
             .await?;
         Ok(())
@@ -390,9 +394,10 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
 
         let offset_bytes = (current_offset - target_offset.0).to_le_bytes();
         let target_bytes = target.as_os_str().as_bytes();
-        let mut hardlink = Vec::with_capacity(offset_bytes.len() + target_bytes.len());
+        let mut hardlink = Vec::with_capacity(offset_bytes.len() + target_bytes.len() + 1);
         hardlink.extend(&offset_bytes);
         hardlink.extend(target_bytes);
+        hardlink.push(0);
         let _this_offset: LinkOffset = self
             .add_file_entry(None, file_name, Some((format::PXAR_HARDLINK, &hardlink)))
             .await?;
@@ -462,7 +467,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
 
         self.start_file_do(metadata, file_name).await?;
         if let Some((htype, entry_data)) = entry_htype_data {
-            seq_write_pxar_entry_zero(&mut self.output, htype, entry_data).await?;
+            seq_write_pxar_entry(&mut self.output, htype, entry_data).await?;
         }
 
         let end_offset = seq_write_position(&mut self.output).await?;
