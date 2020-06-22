@@ -217,7 +217,9 @@ impl<T: Clone + ReadAt> Directory<T> {
         })
     }
 
-    /// Lookup an entry in a directory.
+    /// Lookup an entry starting from this current directory.
+    ///
+    /// For convenience, this already resolves paths with multiple components.
     pub fn lookup<P: AsRef<Path>>(&self, path: P) -> io::Result<Option<FileEntry<T>>> {
         if let Some(file_entry) = poll_result_once(self.inner.lookup(path.as_ref()))? {
             Ok(Some(FileEntry { inner: file_entry }))
