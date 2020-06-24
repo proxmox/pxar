@@ -19,6 +19,12 @@ use siphasher::sip::SipHasher24;
 
 pub mod acl;
 
+// generated with:
+// $ echo -n 'PROXMOX ARCHIVE FORMAT' | sha1sum | sed -re 's/^(.{16})(.{16}).*$/0x\1, 0x\2/'
+pub const PXAR_HASH_KEY_1: u64 = 0x83ac3f1cfbb450db;
+pub const PXAR_HASH_KEY_2: u64 = 0xaa4f1b6879369fbd;
+
+
 /// While these constants correspond to `libc::S_` constants, we need these to be fixed for the
 /// format itself, so we redefine them here.
 ///
@@ -42,29 +48,27 @@ pub mod mode {
     pub const ISVTX  : u64 = 0o0001000;
 }
 
-pub const PXAR_ENTRY: u64 = 0x1396fabcea5bbb51;
-pub const PXAR_FILENAME: u64 = 0x6dbb6ebcb3161f0b;
-pub const PXAR_SYMLINK: u64 = 0x664a6fb6830e0d6c;
-pub const PXAR_DEVICE: u64 = 0xac3dace369dfe643;
-pub const PXAR_XATTR: u64 = 0xb8157091f80bc486;
-pub const PXAR_ACL_USER: u64 = 0x297dc88b2ef12faf;
-pub const PXAR_ACL_GROUP: u64 = 0x36f2acb56cb3dd0b;
-pub const PXAR_ACL_GROUP_OBJ: u64 = 0x23047110441f38f3;
-pub const PXAR_ACL_DEFAULT: u64 = 0xfe3eeda6823c8cd0;
-pub const PXAR_ACL_DEFAULT_USER: u64 = 0xbdf03df9bd010a91;
-pub const PXAR_ACL_DEFAULT_GROUP: u64 = 0xa0cb1168782d1f51;
-pub const PXAR_FCAPS: u64 = 0xf7267db0afed0629;
-pub const PXAR_QUOTA_PROJID: u64 = 0x161baf2d8772a72b;
-
+pub const PXAR_ENTRY: u64 = 0x11da850a1c1cceff;
+pub const PXAR_FILENAME: u64 = 0x16701121063917b3;
+pub const PXAR_SYMLINK: u64 = 0x27f971e7dbf5dc5f;
+pub const PXAR_DEVICE: u64 = 0x9fc9e906586d5ce9;
+pub const PXAR_XATTR: u64 = 0x0dab0229b57dcd03;
+pub const PXAR_ACL_USER: u64 = 0x2ce8540a457d55b8;
+pub const PXAR_ACL_GROUP: u64 = 0x136e3eceb04c03ab;
+pub const PXAR_ACL_GROUP_OBJ: u64 = 0x10868031e9582876;
+pub const PXAR_ACL_DEFAULT: u64 = 0xbbbb13415a6896f5;
+pub const PXAR_ACL_DEFAULT_USER: u64 = 0xc89357b40532cd1f;
+pub const PXAR_ACL_DEFAULT_GROUP: u64 = 0xf90a8a5816038ffe;
+pub const PXAR_FCAPS: u64 = 0x2da9dd9db5f7fb67;
+pub const PXAR_QUOTA_PROJID: u64 = 0xe07540e82f7d1cbb;
 /// Marks item as hardlink
-/// compute_goodbye_hash(b"__PROXMOX_FORMAT_HARDLINK__");
-pub const PXAR_HARDLINK: u64 = 0x2c5e06f634f65b86;
+pub const PXAR_HARDLINK: u64 = 0x51269c8422bd7275;
 /// Marks the beginnig of the payload (actual content) of regular files
-pub const PXAR_PAYLOAD: u64 = 0x8b9e1d93d6dcffc9;
+pub const PXAR_PAYLOAD: u64 = 0x28147a1b0b7c1a25;
 /// Marks item as entry of goodbye table
-pub const PXAR_GOODBYE: u64 = 0xdfd35c5e8327c403;
+pub const PXAR_GOODBYE: u64 = 0x2fec4fa642d5731d;
 /// The end marker used in the GOODBYE object
-pub const PXAR_GOODBYE_TAIL_MARKER: u64 = 0x57446fa533702943;
+pub const PXAR_GOODBYE_TAIL_MARKER: u64 = 0xef5eed5b753e1555;
 
 #[derive(Debug, Endian)]
 #[repr(C)]
@@ -515,7 +519,8 @@ impl GoodbyeItem {
 
 pub fn hash_filename(name: &[u8]) -> u64 {
     use std::hash::Hasher;
-    let mut hasher = SipHasher24::new_with_keys(0x8574442b0f1d84b3, 0x2736ed30d1c22ec1);
+
+    let mut hasher = SipHasher24::new_with_keys(PXAR_HASH_KEY_1, PXAR_HASH_KEY_2);
     hasher.write(name);
     hasher.finish()
 }

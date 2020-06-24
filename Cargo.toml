@@ -16,6 +16,13 @@ name = "apxar"
 path = "examples/apxar.rs"
 required-features = [ "async-example" ]
 
+[[example]]
+name = "mk-format-hashes"
+path = "examples/mk-format-hashes.rs"
+test = false
+bench = false
+doc = false
+
 [dependencies]
 bitflags = "1.2.1"
 endian_trait = { version = "0.6", features = ["arrays"] }
