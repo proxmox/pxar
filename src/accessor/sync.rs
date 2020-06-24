@@ -6,9 +6,9 @@ use std::os::unix::fs::FileExt;
 use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::task::{Context, Poll};
+use std::task::Context;
 
-use crate::accessor::{self, cache::Cache, ReadAt};
+use crate::accessor::{self, cache::Cache, MaybeReady, ReadAt, ReadAtOperation};
 use crate::decoder::Decoder;
 use crate::format::GoodbyeItem;
 use crate::util::poll_result_once;
@@ -153,13 +153,20 @@ impl<T: FileExt> FileReader<T> {
 }
 
 impl<T: FileExt> ReadAt for FileReader<T> {
-    fn poll_read_at(
-        self: Pin<&Self>,
+    fn start_read_at<'a>(
+        self: Pin<&'a Self>,
         _cx: &mut Context,
-        buf: &mut [u8],
+        buf: &'a mut [u8],
         offset: u64,
-    ) -> Poll<io::Result<usize>> {
-        Poll::Ready(self.get_ref().inner.read_at(buf, offset))
+    ) -> MaybeReady<io::Result<usize>, ReadAtOperation<'a>> {
+        MaybeReady::Ready(self.get_ref().inner.read_at(buf, offset))
+    }
+
+    fn poll_complete<'a>(
+        self: Pin<&'a Self>,
+        _op: ReadAtOperation<'a>,
+    ) -> MaybeReady<io::Result<usize>, ReadAtOperation<'a>> {
+        panic!("start_read_at on sync file returned Pending");
     }
 }
 
@@ -180,13 +187,20 @@ where
     T: Clone + std::ops::Deref,
     T::Target: FileExt,
 {
-    fn poll_read_at(
-        self: Pin<&Self>,
+    fn start_read_at<'a>(
+        self: Pin<&'a Self>,
         _cx: &mut Context,
-        buf: &mut [u8],
+        buf: &'a mut [u8],
         offset: u64,
-    ) -> Poll<io::Result<usize>> {
-        Poll::Ready(self.get_ref().inner.read_at(buf, offset))
+    ) -> MaybeReady<io::Result<usize>, ReadAtOperation<'a>> {
+        MaybeReady::Ready(self.get_ref().inner.read_at(buf, offset))
+    }
+
+    fn poll_complete<'a>(
+        self: Pin<&'a Self>,
+        _op: ReadAtOperation<'a>,
+    ) -> MaybeReady<io::Result<usize>, ReadAtOperation<'a>> {
+        panic!("start_read_at on sync file returned Pending");
     }
 }
 
@@ -383,12 +397,22 @@ impl<T: Clone + ReadAt> FileExt for FileContents<T> {
 }
 
 impl<T: Clone + ReadAt> ReadAt for FileContents<T> {
-    fn poll_read_at(
-        self: Pin<&Self>,
-        _cx: &mut Context,
-        buf: &mut [u8],
+    fn start_read_at<'a>(
+        self: Pin<&'a Self>,
+        cx: &mut Context,
+        buf: &'a mut [u8],
         offset: u64,
-    ) -> Poll<io::Result<usize>> {
-        Poll::Ready(poll_result_once(self.get_ref().inner.read_at(buf, offset)))
+    ) -> MaybeReady<io::Result<usize>, ReadAtOperation<'a>> {
+        match unsafe { self.map_unchecked(|this| &this.inner) }.start_read_at(cx, buf, offset) {
+            MaybeReady::Ready(ready) => MaybeReady::Ready(ready),
+            MaybeReady::Pending(_) => panic!("start_read_at on sync file returned Pending"),
+        }
+    }
+
+    fn poll_complete<'a>(
+        self: Pin<&'a Self>,
+        _op: ReadAtOperation<'a>,
+    ) -> MaybeReady<io::Result<usize>, ReadAtOperation<'a>> {
+        panic!("start_read_at on sync file returned Pending");
     }
 }

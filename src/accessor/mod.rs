@@ -1,6 +1,7 @@
 //! Random access for PXAR files.
 
 use std::ffi::{OsStr, OsString};
+use std::future::Future;
 use std::io;
 use std::mem::{self, size_of, size_of_val, MaybeUninit};
 use std::ops::Range;
@@ -15,7 +16,6 @@ use endian_trait::Endian;
 use crate::binary_tree_array;
 use crate::decoder::{self, DecoderImpl};
 use crate::format::{self, GoodbyeItem};
-use crate::poll_fn::poll_fn;
 use crate::util;
 use crate::{Entry, EntryKind};
 
@@ -23,8 +23,13 @@ pub mod aio;
 pub mod cache;
 pub mod sync;
 
+pub mod read_at;
+
 #[doc(inline)]
 pub use sync::{Accessor, DirEntry, Directory, FileEntry, ReadDir};
+
+#[doc(inline)]
+pub use read_at::{MaybeReady, ReadAt, ReadAtExt, ReadAtOperation};
 
 use cache::Cache;
 
@@ -44,28 +49,18 @@ impl EntryRangeInfo {
     }
 }
 
-/// Random access read implementation.
-pub trait ReadAt {
-    fn poll_read_at(
-        self: Pin<&Self>,
-        cx: &mut Context,
-        buf: &mut [u8],
-        offset: u64,
-    ) -> Poll<io::Result<usize>>;
-}
-
-/// awaitable version of `poll_read_at`.
+/// awaitable version of `ReadAt`.
 async fn read_at<T>(input: &T, buf: &mut [u8], offset: u64) -> io::Result<usize>
 where
-    T: ReadAt + ?Sized,
+    T: ReadAtExt,
 {
-    poll_fn(|cx| unsafe { Pin::new_unchecked(input).poll_read_at(cx, buf, offset) }).await
+    input.read_at(buf, offset).await
 }
 
 /// `read_exact_at` - since that's what we _actually_ want most of the time.
 async fn read_exact_at<T>(input: &T, mut buf: &mut [u8], mut offset: u64) -> io::Result<()>
 where
-    T: ReadAt + ?Sized,
+    T: ReadAt,
 {
     while !buf.is_empty() {
         match read_at(input, buf, offset).await? {
@@ -82,7 +77,7 @@ where
 /// Helper to read into an `Endian`-implementing `struct`.
 async fn read_entry_at<T, E: Endian>(input: &T, offset: u64) -> io::Result<E>
 where
-    T: ReadAt + ?Sized,
+    T: ReadAt,
 {
     let mut data = MaybeUninit::<E>::uninit();
     let buf =
@@ -94,7 +89,7 @@ where
 /// Helper to read into an allocated byte vector.
 async fn read_exact_data_at<T>(input: &T, size: usize, offset: u64) -> io::Result<Vec<u8>>
 where
-    T: ReadAt + ?Sized,
+    T: ReadAt,
 {
     let mut data = util::vec_new(size);
     read_exact_at(input, &mut data[..], offset).await?;
@@ -102,14 +97,21 @@ where
 }
 
 /// Allow using trait objects for `T: ReadAt`
-impl<'a> ReadAt for &(dyn ReadAt + 'a) {
-    fn poll_read_at(
-        self: Pin<&Self>,
+impl<'d> ReadAt for &(dyn ReadAt + 'd) {
+    fn start_read_at<'a>(
+        self: Pin<&'a Self>,
         cx: &mut Context,
-        buf: &mut [u8],
+        buf: &'a mut [u8],
         offset: u64,
-    ) -> Poll<io::Result<usize>> {
-        unsafe { Pin::new_unchecked(&**self).poll_read_at(cx, buf, offset) }
+    ) -> MaybeReady<io::Result<usize>, ReadAtOperation<'a>> {
+        unsafe { Pin::new_unchecked(&**self).start_read_at(cx, buf, offset) }
+    }
+
+    fn poll_complete<'a>(
+        self: Pin<&'a Self>,
+        op: ReadAtOperation<'a>,
+    ) -> MaybeReady<io::Result<usize>, ReadAtOperation<'a>> {
+        unsafe { Pin::new_unchecked(&**self).poll_complete(op) }
     }
 }
 
@@ -117,13 +119,23 @@ impl<'a> ReadAt for &(dyn ReadAt + 'a) {
 /// immutable `&self`, this adds some convenience by allowing to just `Arc` any `'static` type that
 /// implemments `ReadAt` for type monomorphization.
 impl ReadAt for Arc<dyn ReadAt + Send + Sync + 'static> {
-    fn poll_read_at(
-        self: Pin<&Self>,
+    fn start_read_at<'a>(
+        self: Pin<&'a Self>,
         cx: &mut Context,
-        buf: &mut [u8],
+        buf: &'a mut [u8],
         offset: u64,
-    ) -> Poll<io::Result<usize>> {
-        unsafe { Pin::new_unchecked(&**self).poll_read_at(cx, buf, offset) }
+    ) -> MaybeReady<io::Result<usize>, ReadAtOperation<'a>> {
+        unsafe {
+            self.map_unchecked(|this| &**this)
+                .start_read_at(cx, buf, offset)
+        }
+    }
+
+    fn poll_complete<'a>(
+        self: Pin<&'a Self>,
+        op: ReadAtOperation<'a>,
+    ) -> MaybeReady<io::Result<usize>, ReadAtOperation<'a>> {
+        unsafe { self.map_unchecked(|this| &**this).poll_complete(op) }
     }
 }
 
@@ -212,7 +224,10 @@ async fn get_decoder_at_filename<T: ReadAt>(
         io_bail!("filename exceeds current file range");
     }
 
-    Ok((get_decoder(input, entry_offset..entry_range.end, path).await?, entry_offset))
+    Ok((
+        get_decoder(input, entry_offset..entry_range.end, path).await?,
+        entry_offset,
+    ))
 }
 
 impl<T: Clone + ReadAt> AccessorImpl<T> {
@@ -777,6 +792,7 @@ impl<'a, T: Clone + ReadAt> DirEntryImpl<'a, T> {
 }
 
 /// A reader for file contents.
+#[derive(Clone)]
 pub(crate) struct FileContentsImpl<T> {
     input: T,
 
@@ -810,15 +826,15 @@ impl<T: Clone + ReadAt> FileContentsImpl<T> {
 }
 
 impl<T: Clone + ReadAt> ReadAt for FileContentsImpl<T> {
-    fn poll_read_at(
-        self: Pin<&Self>,
+    fn start_read_at<'a>(
+        self: Pin<&'a Self>,
         cx: &mut Context,
-        mut buf: &mut [u8],
+        mut buf: &'a mut [u8],
         offset: u64,
-    ) -> Poll<io::Result<usize>> {
+    ) -> MaybeReady<io::Result<usize>, ReadAtOperation<'a>> {
         let size = self.file_size();
         if offset >= size {
-            return Poll::Ready(Ok(0));
+            return MaybeReady::Ready(Ok(0));
         }
         let remaining = size - offset;
 
@@ -827,7 +843,14 @@ impl<T: Clone + ReadAt> ReadAt for FileContentsImpl<T> {
         }
 
         let offset = self.range.start + offset;
-        unsafe { self.map_unchecked(|this| &this.input) }.poll_read_at(cx, buf, offset)
+        unsafe { self.map_unchecked(|this| &this.input) }.start_read_at(cx, buf, offset)
+    }
+
+    fn poll_complete<'a>(
+        self: Pin<&'a Self>,
+        op: ReadAtOperation<'a>,
+    ) -> MaybeReady<io::Result<usize>, ReadAtOperation<'a>> {
+        unsafe { self.map_unchecked(|this| &this.input) }.poll_complete(op)
     }
 }
 
@@ -835,6 +858,21 @@ impl<T: Clone + ReadAt> ReadAt for FileContentsImpl<T> {
 pub struct SeqReadAtAdapter<T> {
     input: T,
     range: Range<u64>,
+    buffer: Vec<u8>,
+    future: Option<Pin<Box<dyn Future<Output = io::Result<(usize, Vec<u8>)>> + 'static>>>,
+}
+
+// We lose `Send` via the boxed trait object and don't want to force the trait object to
+// potentially be more strict than `T`, so we leave it as it is ans implement Send and Sync
+// depending on T.
+unsafe impl<T: Send> Send for SeqReadAtAdapter<T> {}
+unsafe impl<T: Sync> Sync for SeqReadAtAdapter<T> {}
+
+impl<T> Drop for SeqReadAtAdapter<T> {
+    fn drop(&mut self) {
+        // drop order
+        self.future = None;
+    }
 }
 
 impl<T: ReadAt> SeqReadAtAdapter<T> {
@@ -842,7 +880,12 @@ impl<T: ReadAt> SeqReadAtAdapter<T> {
         if range.end < range.start {
             panic!("BAD SEQ READ AT ADAPTER");
         }
-        Self { input, range }
+        Self {
+            input,
+            range,
+            buffer: Vec::new(),
+            future: None,
+        }
     }
 
     #[inline]
@@ -855,18 +898,48 @@ impl<T: ReadAt> decoder::SeqRead for SeqReadAtAdapter<T> {
     fn poll_seq_read(
         self: Pin<&mut Self>,
         cx: &mut Context,
-        buf: &mut [u8],
+        dest: &mut [u8],
     ) -> Poll<io::Result<usize>> {
-        let len = buf.len().min(self.remaining());
-        let buf = &mut buf[..len];
+        let len = dest.len().min(self.remaining());
+        let dest = &mut dest[..len];
 
         let this = unsafe { self.get_unchecked_mut() };
+        loop {
+            match this.future.take() {
+                None => {
+                    let mut buffer = mem::take(&mut this.buffer);
+                    util::scale_read_buffer(&mut buffer, dest.len());
 
-        let got = ready!(unsafe {
-            Pin::new_unchecked(&this.input).poll_read_at(cx, buf, this.range.start)
-        })?;
-        this.range.start += got as u64;
-        Poll::Ready(Ok(got))
+                    // Note that we're pinned and we have a drop-handler which forces self.future
+                    // to be dropped before `input`, so putting a reference to self.input into the
+                    // future should be ok!
+                    let reader = &this.input;
+
+                    let at = this.range.start;
+                    let future: Pin<Box<dyn Future<Output = io::Result<(usize, Vec<u8>)>>>> =
+                        Box::pin(async move {
+                            let got = reader.read_at(&mut buffer, at).await?;
+                            io::Result::Ok((got, buffer))
+                        });
+                    // Ditch the self-reference life-time now:
+                    this.future = Some(unsafe { mem::transmute(future) });
+                }
+                Some(mut fut) => match fut.as_mut().poll(cx) {
+                    Poll::Pending => {
+                        this.future = Some(fut);
+                        return Poll::Pending;
+                    }
+                    Poll::Ready(Err(err)) => return Poll::Ready(Err(err)),
+                    Poll::Ready(Ok((got, buffer))) => {
+                        this.buffer = buffer;
+                        this.range.start += got as u64;
+                        let len = got.min(dest.len());
+                        dest[..len].copy_from_slice(&this.buffer[..len]);
+                        return Poll::Ready(Ok(len));
+                    }
+                },
+            }
+        }
     }
 
     fn poll_position(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<Option<io::Result<u64>>> {

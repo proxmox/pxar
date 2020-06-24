@@ -5,6 +5,22 @@ use std::io;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+pub const MAX_READ_BUF_LEN: usize = 4 * 1024 * 1024;
+
+pub fn scale_read_buffer(buffer: &mut Vec<u8>, target: usize) {
+    let target = target.min(MAX_READ_BUF_LEN);
+
+    if buffer.len() >= target {
+        buffer.truncate(target);
+        return;
+    }
+
+    buffer.reserve(target - buffer.len());
+    unsafe {
+        buffer.set_len(target);
+    }
+}
+
 // from /usr/include/linux/magic.h
 // and from casync util.h
 #[rustfmt::skip]

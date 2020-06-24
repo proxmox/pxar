@@ -4,7 +4,9 @@
 //!
 //! TODO: Implement a locking version for AsyncSeek+AsyncRead files?
 
+use std::future::Future;
 use std::io;
+use std::mem;
 use std::ops::Range;
 use std::os::unix::fs::FileExt;
 use std::path::Path;
@@ -12,10 +14,10 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
-use crate::accessor::{self, cache::Cache, ReadAt};
+use crate::accessor::{self, cache::Cache, MaybeReady, ReadAt, ReadAtOperation};
 use crate::decoder::aio::Decoder;
 use crate::format::GoodbyeItem;
-use crate::poll_fn::poll_fn;
+use crate::util;
 use crate::Entry;
 
 use super::sync::{FileReader, FileRefReader};
@@ -134,6 +136,8 @@ impl<T: Clone + ReadAt> Accessor<T> {
         FileContents {
             inner: self.inner.open_contents_at_range(range),
             at: 0,
+            buffer: Vec::new(),
+            future: None,
         }
     }
 
@@ -218,6 +222,8 @@ impl<T: Clone + ReadAt> FileEntry<T> {
         Ok(FileContents {
             inner: self.inner.contents().await?,
             at: 0,
+            buffer: Vec::new(),
+            future: None,
         })
     }
 
@@ -311,6 +317,60 @@ impl<'a, T: Clone + ReadAt> DirEntry<'a, T> {
 pub struct FileContents<T> {
     inner: accessor::FileContentsImpl<T>,
     at: u64,
+    buffer: Vec<u8>,
+    future: Option<Pin<Box<dyn Future<Output = io::Result<(usize, Vec<u8>)>> + 'static>>>,
+}
+
+// We lose `Send` via the boxed trait object and don't want to force the trait object to
+// potentially be more strict than `T`, so we leave it as it is ans implement Send and Sync
+// depending on T.
+unsafe impl<T: Send> Send for FileContents<T> {}
+unsafe impl<T: Sync> Sync for FileContents<T> {}
+
+#[cfg(any(feature = "futures-io", feature = "tokio-io"))]
+impl<T: Clone + ReadAt> FileContents<T> {
+    /// Similar implementation exists for SeqReadAtAdapter in mod.rs
+    fn do_poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context,
+        dest: &mut [u8],
+    ) -> Poll<io::Result<usize>> {
+        let this = unsafe { Pin::into_inner_unchecked(self) };
+        loop {
+            match this.future.take() {
+                None => {
+                    let mut buffer = mem::take(&mut this.buffer);
+                    util::scale_read_buffer(&mut buffer, dest.len());
+                    let reader: accessor::FileContentsImpl<T> = this.inner.clone();
+                    let at = this.at;
+                    let future: Pin<Box<dyn Future<Output = io::Result<(usize, Vec<u8>)>>>> =
+                        Box::pin(async move {
+                            let got = reader.read_at(&mut buffer, at).await?;
+                            io::Result::Ok((got, buffer))
+                        });
+                    // This future has the lifetime from T. Self also has this lifetime and we
+                    // store this in a pinned self. T maybe a reference with a non-'static life
+                    // time, but then it cannot be a self-reference into Self, so this should be
+                    // valid in all cases:
+                    this.future = Some(unsafe { mem::transmute(future) });
+                }
+                Some(mut fut) => match fut.as_mut().poll(cx) {
+                    Poll::Pending => {
+                        this.future = Some(fut);
+                        return Poll::Pending;
+                    }
+                    Poll::Ready(Err(err)) => return Poll::Ready(Err(err)),
+                    Poll::Ready(Ok((got, buffer))) => {
+                        this.buffer = buffer;
+                        this.at += got as u64;
+                        let len = got.min(dest.len());
+                        dest[..len].copy_from_slice(&this.buffer[..len]);
+                        return Poll::Ready(Ok(len));
+                    }
+                },
+            }
+        }
+    }
 }
 
 #[cfg(feature = "futures-io")]
@@ -320,16 +380,7 @@ impl<T: Clone + ReadAt> futures::io::AsyncRead for FileContents<T> {
         cx: &mut Context,
         buf: &mut [u8],
     ) -> Poll<io::Result<usize>> {
-        let inner = unsafe { Pin::new_unchecked(&self.inner) };
-        match inner.poll_read_at(cx, buf, self.at) {
-            Poll::Ready(Ok(got)) => {
-                unsafe {
-                    self.get_unchecked_mut().at += got as u64;
-                }
-                Poll::Ready(Ok(got))
-            }
-            other => other,
-        }
+        Self::do_poll_read(self, cx, buf)
     }
 }
 
@@ -340,34 +391,31 @@ impl<T: Clone + ReadAt> tokio::io::AsyncRead for FileContents<T> {
         cx: &mut Context,
         buf: &mut [u8],
     ) -> Poll<io::Result<usize>> {
-        let inner = unsafe { Pin::new_unchecked(&self.inner) };
-        match inner.poll_read_at(cx, buf, self.at) {
-            Poll::Ready(Ok(got)) => {
-                unsafe {
-                    self.get_unchecked_mut().at += got as u64;
-                }
-                Poll::Ready(Ok(got))
-            }
-            other => other,
-        }
+        Self::do_poll_read(self, cx, buf)
     }
 }
 
 impl<T: Clone + ReadAt> ReadAt for FileContents<T> {
-    fn poll_read_at(
-        self: Pin<&Self>,
+    fn start_read_at<'a>(
+        self: Pin<&'a Self>,
         cx: &mut Context,
-        buf: &mut [u8],
+        buf: &'a mut [u8],
         offset: u64,
-    ) -> Poll<io::Result<usize>> {
-        unsafe { self.map_unchecked(|this| &this.inner) }.poll_read_at(cx, buf, offset)
+    ) -> MaybeReady<io::Result<usize>, ReadAtOperation<'a>> {
+        unsafe { self.map_unchecked(|this| &this.inner) }.start_read_at(cx, buf, offset)
+    }
+
+    fn poll_complete<'a>(
+        self: Pin<&'a Self>,
+        op: ReadAtOperation<'a>,
+    ) -> MaybeReady<io::Result<usize>, ReadAtOperation<'a>> {
+        unsafe { self.map_unchecked(|this| &this.inner) }.poll_complete(op)
     }
 }
 
 impl<T: Clone + ReadAt> FileContents<T> {
     /// Convenience helper for `read_at`:
     pub async fn read_at(&self, buf: &mut [u8], offset: u64) -> io::Result<usize> {
-        let this = unsafe { Pin::new_unchecked(self) };
-        poll_fn(move |cx| this.poll_read_at(cx, buf, offset)).await
+        self.inner.read_at(buf, offset).await
     }
 }
