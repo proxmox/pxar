@@ -1,3 +1,9 @@
+rust-pxar (0.1.9-1) pve; urgency=medium
+
+  * more useful/correct ReadAt trait definition
+
+ -- Proxmox Support Team <support@proxmox.com>  Wed, 24 Jun 2020 11:55:50 +0200
+
 rust-pxar (0.1.8-1) pve; urgency=medium
 
   * fix a bug with encoding device files
