@@ -140,11 +140,7 @@ where
     let header = format::Header::with_content_size(htype, data.len() as u64);
     header.check_header_size()?;
 
-    seq_write_struct(
-        &mut *output,
-        header,
-    )
-    .await?;
+    seq_write_struct(&mut *output, header).await?;
     seq_write_all(output, data).await
 }
 
@@ -157,11 +153,7 @@ where
     let header = format::Header::with_content_size(htype, 1 + data.len() as u64);
     header.check_header_size()?;
 
-    seq_write_struct(
-        &mut *output,
-        header,
-    )
-    .await?;
+    seq_write_struct(&mut *output, header).await?;
     seq_write_all(&mut *output, data).await?;
     seq_write_all(output, &[0u8]).await
 }
@@ -315,11 +307,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         let header = format::Header::with_content_size(format::PXAR_PAYLOAD, file_size);
         header.check_header_size()?;
 
-        seq_write_struct(
-            &mut self.output,
-            header,
-        )
-        .await?;
+        seq_write_struct(&mut self.output, header).await?;
 
         let payload_data_offset = seq_write_position(&mut self.output).await?;
 

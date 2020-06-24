@@ -125,7 +125,12 @@ impl Header {
         }
 
         if self.content_size() > self.max_content_size() {
-            io_bail!("invalid content size ({} > {}) of entry with {}", self.content_size(), self.max_content_size(), self);
+            io_bail!(
+                "invalid content size ({} > {}) of entry with {}",
+                self.content_size(),
+                self.max_content_size(),
+                self
+            );
         }
         Ok(())
     }

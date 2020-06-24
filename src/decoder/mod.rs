@@ -75,9 +75,7 @@ impl<'a> SeqRead for &mut (dyn SeqRead + 'a) {
 }
 
 /// awaitable version of `poll_position`.
-async fn seq_read_position<T: SeqRead + ?Sized>(
-    input: &mut T,
-) -> Option<io::Result<u64>> {
+async fn seq_read_position<T: SeqRead + ?Sized>(input: &mut T) -> Option<io::Result<u64>> {
     poll_fn(|cx| unsafe { Pin::new_unchecked(&mut *input).poll_position(cx) }).await
 }
 
@@ -379,10 +377,7 @@ impl<I: SeqRead> DecoderImpl<I> {
 
             Ok(Some(self.entry.take()))
         } else {
-            io_bail!(
-                "expected pxar entry of type 'Entry', got: {}",
-                header,
-            );
+            io_bail!("expected pxar entry of type 'Entry', got: {}", header,);
         }
     }
 
