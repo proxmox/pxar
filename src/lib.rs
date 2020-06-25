@@ -35,6 +35,7 @@ pub use format::mode;
 /// This includes the usual data you'd get from `stat()` as well as ACLs, extended attributes, file
 /// capabilities and more.
 #[derive(Clone, Debug, Default)]
+#[cfg_attr(feature = "test-harness", derive(Eq, PartialEq))]
 pub struct Metadata {
     /// Data typically found in a `stat()` call.
     pub stat: Stat,
@@ -283,6 +284,7 @@ impl MetadataBuilder {
 ///
 /// This contains all the various ACL entry types supported by the pxar archive format.
 #[derive(Clone, Debug, Default)]
+#[cfg_attr(feature = "test-harness", derive(Eq, PartialEq))]
 pub struct Acl {
     /// User ACL list.
     pub users: Vec<format::acl::User>,

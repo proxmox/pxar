@@ -20,7 +20,7 @@ impl Permissions {
     pub const NO_MASK: Permissions = Permissions(NO_MASK);
 }
 
-#[derive(Clone, Debug, Endian, Eq)]
+#[derive(Clone, Debug, Endian, Eq, PartialEq)]
 #[repr(C)]
 pub struct User {
     pub uid: u64,
@@ -46,13 +46,7 @@ impl PartialOrd for User {
     }
 }
 
-impl PartialEq for User {
-    fn eq(&self, other: &User) -> bool {
-        self.uid == other.uid && self.permissions == other.permissions
-    }
-}
-
-#[derive(Clone, Debug, Endian, Eq)]
+#[derive(Clone, Debug, Endian, Eq, PartialEq)]
 #[repr(C)]
 pub struct Group {
     pub gid: u64,
@@ -78,19 +72,14 @@ impl PartialOrd for Group {
     }
 }
 
-impl PartialEq for Group {
-    fn eq(&self, other: &Group) -> bool {
-        self.gid == other.gid && self.permissions == other.permissions
-    }
-}
-
-#[derive(Clone, Debug, Endian)]
+#[derive(Clone, Debug, Endian, Eq, PartialEq)]
 #[repr(C)]
 pub struct GroupObject {
     pub permissions: Permissions,
 }
 
 #[derive(Clone, Debug, Endian)]
+#[cfg_attr(feature = "test-harness", derive(Eq, PartialEq))]
 #[repr(C)]
 pub struct Default {
     pub user_obj_permissions: Permissions,

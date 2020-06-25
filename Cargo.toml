@@ -23,6 +23,12 @@ test = false
 bench = false
 doc = false
 
+[[test]]
+name = "simple"
+path = "tests/simple/main.rs"
+test = true
+required-features = [ "anyhow", "test-harness" ]
+
 [dependencies]
 bitflags = "1.2.1"
 endian_trait = { version = "0.6", features = ["arrays"] }
@@ -49,6 +55,8 @@ async-example = [
     "tokio/io-driver",
     "tokio/macros",
 ]
+
+test-harness = []
 
 [dev-dependencies]
 libc = "0.2"

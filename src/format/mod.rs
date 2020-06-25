@@ -165,6 +165,7 @@ impl Display for Header {
 }
 
 #[derive(Clone, Debug, Default, Endian)]
+#[cfg_attr(feature = "test-harness", derive(Eq, PartialEq))]
 #[repr(C)]
 pub struct Entry {
     pub mode: u64,
@@ -438,7 +439,7 @@ impl PartialEq for XAttr {
     }
 }
 
-#[derive(Clone, Debug, Endian)]
+#[derive(Clone, Debug, Endian, Eq, PartialEq)]
 #[repr(C)]
 pub struct Device {
     pub major: u64,
@@ -479,12 +480,13 @@ fn test_linux_devices() {
 }
 
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "test-harness", derive(Eq, PartialEq))]
 #[repr(C)]
 pub struct FCaps {
     pub data: Vec<u8>,
 }
 
-#[derive(Clone, Copy, Debug, Endian)]
+#[derive(Clone, Copy, Debug, Endian, Eq, PartialEq)]
 #[repr(C)]
 pub struct QuotaProjectId {
     pub projid: u64,
