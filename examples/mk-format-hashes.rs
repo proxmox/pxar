@@ -10,18 +10,33 @@ const CONSTANTS: &[(&str, &str, &str)] = &[
     ("", "PXAR_ACL_GROUP", "__PROXMOX_FORMAT_ACL_GROUP__"),
     ("", "PXAR_ACL_GROUP_OBJ", "__PROXMOX_FORMAT_ACL_GROUP_OBJ__"),
     ("", "PXAR_ACL_DEFAULT", "__PROXMOX_FORMAT_ACL_DEFAULT__"),
-    ("", "PXAR_ACL_DEFAULT_USER", "__PROXMOX_FORMAT_ACL_DEFAULT_USER__"),
-    ("", "PXAR_ACL_DEFAULT_GROUP", "__PROXMOX_FORMAT_ACL_DEFAULT_GROUP__"),
+    (
+        "",
+        "PXAR_ACL_DEFAULT_USER",
+        "__PROXMOX_FORMAT_ACL_DEFAULT_USER__",
+    ),
+    (
+        "",
+        "PXAR_ACL_DEFAULT_GROUP",
+        "__PROXMOX_FORMAT_ACL_DEFAULT_GROUP__",
+    ),
     ("", "PXAR_FCAPS", "__PROXMOX_FORMAT_FCAPS__"),
     ("", "PXAR_QUOTA_PROJID", "__PROXMOX_FORMAT_QUOTA_PROJID__"),
-
-    ("Marks item as hardlink", "PXAR_HARDLINK", "__PROXMOX_FORMAT_HARDLINK__"),
+    (
+        "Marks item as hardlink",
+        "PXAR_HARDLINK",
+        "__PROXMOX_FORMAT_HARDLINK__",
+    ),
     (
         "Marks the beginnig of the payload (actual content) of regular files",
         "PXAR_PAYLOAD",
         "__PROXMOX_FORMAT_PXAR_PAYLOAD__",
     ),
-    ("Marks item as entry of goodbye table", "PXAR_GOODBYE", "__PROXMOX_FORMAT_GOODBYE__"),
+    (
+        "Marks item as entry of goodbye table",
+        "PXAR_GOODBYE",
+        "__PROXMOX_FORMAT_GOODBYE__",
+    ),
     (
         "The end marker used in the GOODBYE object",
         "PXAR_GOODBYE_TAIL_MARKER",

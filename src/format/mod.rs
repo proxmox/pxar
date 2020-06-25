@@ -24,7 +24,6 @@ pub mod acl;
 pub const PXAR_HASH_KEY_1: u64 = 0x83ac3f1cfbb450db;
 pub const PXAR_HASH_KEY_2: u64 = 0xaa4f1b6879369fbd;
 
-
 /// While these constants correspond to `libc::S_` constants, we need these to be fixed for the
 /// format itself, so we redefine them here.
 ///
