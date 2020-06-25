@@ -86,6 +86,7 @@ impl Entry {
     }
 }
 
+#[rustfmt::skip]
 pub fn test_fs() -> Entry {
     Entry::new("/")
         .metadata(Metadata::dir_builder(0o755))

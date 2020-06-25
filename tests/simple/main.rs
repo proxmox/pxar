@@ -26,14 +26,12 @@ fn test1() {
     let mut file = Vec::<u8>::new();
 
     let test_fs = fs::test_fs();
-    let mut encoder = encoder::Encoder::from_std(&mut file, &test_fs.metadata)
-        .expect("failed to create encoder");
-    encode_directory(&mut encoder, &test_fs)
-        .expect("failed to encode test file system");
+    let mut encoder =
+        encoder::Encoder::from_std(&mut file, &test_fs.metadata).expect("failed to create encoder");
+    encode_directory(&mut encoder, &test_fs).expect("failed to encode test file system");
     encoder.finish();
 
     assert!(!file.is_empty(), "encoder did not write any data");
 
-    let mut decoder = decoder::Decoder::from_std(&mut &file[..])
-        .expect("failed to create decoder");
+    let mut decoder = decoder::Decoder::from_std(&mut &file[..]).expect("failed to create decoder");
 }
