@@ -2,6 +2,7 @@
 //!
 //! This implements a reader and writer for the proxmox archive format (.pxar).
 
+use std::convert::TryFrom;
 use std::ffi::OsStr;
 use std::mem;
 use std::path::{Path, PathBuf};
@@ -19,6 +20,7 @@ pub mod accessor;
 pub mod binary_tree_array;
 pub mod decoder;
 pub mod encoder;
+pub mod errors;
 
 /// Reexport of `format::Entry`. Since this conveys mostly information found via the `stat` syscall
 /// we mostly use this name for public interfaces.
@@ -128,6 +130,152 @@ impl Metadata {
     /// Get the mtime as duration since the epoch.
     pub fn mtime_as_duration(&self) -> std::time::Duration {
         self.stat.mtime_as_duration()
+    }
+
+    /// A more convenient way to create metadata for a regular file.
+    pub fn file_builder(mode: u64) -> MetadataBuilder {
+        Self::builder(mode::IFREG | (mode & !mode::IFMT))
+    }
+
+    /// A more convenient way to create metadata for a directory file.
+    pub fn dir_builder(mode: u64) -> MetadataBuilder {
+        Self::builder(mode::IFDIR | (mode & !mode::IFMT))
+    }
+
+    /// A more convenient way to create generic metadata.
+    pub fn builder(mode: u64) -> MetadataBuilder {
+        MetadataBuilder::new(mode)
+    }
+}
+
+impl From<MetadataBuilder> for Metadata {
+    fn from(builder: MetadataBuilder) -> Self {
+        builder.build()
+    }
+}
+
+pub struct MetadataBuilder {
+    inner: Metadata,
+}
+
+impl MetadataBuilder {
+    pub const fn new(type_and_mode: u64) -> Self {
+        Self {
+            inner: Metadata {
+                stat: Stat {
+                    mode: type_and_mode,
+                    flags: 0,
+                    uid: 0,
+                    gid: 0,
+                    mtime: 0,
+                },
+                xattrs: Vec::new(),
+                acl: Acl {
+                    users: Vec::new(),
+                    groups: Vec::new(),
+                    group_obj: None,
+                    default: None,
+                    default_users: Vec::new(),
+                    default_groups: Vec::new(),
+                },
+                fcaps: None,
+                quota_project_id: None,
+            },
+        }
+    }
+
+    pub fn build(self) -> Metadata {
+        self.inner
+    }
+
+    /// Set the file type (`mode & mode::IFMT`).
+    pub const fn file_type(mut self, mode: u64) -> Self {
+        self.inner.stat.mode = (self.inner.stat.mode & !mode::IFMT) | (mode & mode::IFMT);
+        self
+    }
+
+    /// Set the file mode bits (`mode & !mode::IFMT`).
+    pub const fn file_mode(mut self, mode: u64) -> Self {
+        self.inner.stat.mode = (self.inner.stat.mode & mode::IFMT) | (mode & !mode::IFMT);
+        self
+    }
+
+    /// Set the modification time from a system time.
+    pub fn mtime(self, mtime: std::time::SystemTime) -> Result<Self, errors::TimeError> {
+        self.mtime_unix(mtime.duration_since(std::time::SystemTime::UNIX_EPOCH)?)
+    }
+
+    /// Set the modification time from a duration since the epoch (`SystemTime::UNIX_EPOCH`).
+    pub fn mtime_unix(mut self, mtime: std::time::Duration) -> Result<Self, errors::TimeError> {
+        let nanos =
+            u64::try_from(mtime.as_nanos()).map_err(|_| errors::TimeError::Overflow(mtime))?;
+        self.inner.stat.mtime = nanos;
+        Ok(self)
+    }
+
+    /// Set the ownership information.
+    pub const fn owner(self, uid: u32, gid: u32) -> Self {
+        self.uid(uid).gid(gid)
+    }
+
+    /// Set the owning user id.
+    pub const fn uid(mut self, uid: u32) -> Self {
+        self.inner.stat.uid = uid;
+        self
+    }
+
+    /// Set the owning user id.
+    pub const fn gid(mut self, gid: u32) -> Self {
+        self.inner.stat.gid = gid;
+        self
+    }
+
+    /// Add an extended attribute.
+    pub fn xattr<N: AsRef<[u8]>, V: AsRef<[u8]>>(mut self, name: N, value: V) -> Self {
+        self.inner.xattrs.push(format::XAttr::new(name, value));
+        self
+    }
+
+    /// Add a user ACL entry.
+    pub fn acl_user(mut self, entry: format::acl::User) -> Self {
+        self.inner.acl.users.push(entry);
+        self
+    }
+
+    /// Add a group ACL entry.
+    pub fn acl_group(mut self, entry: format::acl::Group) -> Self {
+        self.inner.acl.groups.push(entry);
+        self
+    }
+
+    /// Add a user default-ACL entry.
+    pub fn default_acl_user(mut self, entry: format::acl::User) -> Self {
+        self.inner.acl.default_users.push(entry);
+        self
+    }
+
+    /// Add a group default-ACL entry.
+    pub fn default_acl_group(mut self, entry: format::acl::Group) -> Self {
+        self.inner.acl.default_groups.push(entry);
+        self
+    }
+
+    /// Set the default ACL entry for a directory.
+    pub const fn default_acl(mut self, entry: Option<format::acl::Default>) -> Self {
+        self.inner.acl.default = entry;
+        self
+    }
+
+    /// Set the quota project id.
+    pub fn quota_project_id(mut self, id: Option<u64>) -> Self {
+        self.inner.quota_project_id = id.map(|projid| format::QuotaProjectId { projid });
+        self
+    }
+
+    /// Set the raw file capability data.
+    pub fn fcaps(mut self, fcaps: Option<Vec<u8>>) -> Self {
+        self.inner.fcaps = fcaps.map(|data| format::FCaps { data });
+        self
     }
 }
 
