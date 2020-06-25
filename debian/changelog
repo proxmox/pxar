@@ -1,3 +1,17 @@
+rust-pxar (0.2.0-1) pve; urgency=medium
+
+  * Archive format compatibility breakage:
+
+  * All constants used in the pxar format have now been recomputed from
+    strings of the form `__PROXMOX_FORMAT_<header-type>__`, the hash keys used
+    for the sip hasher come from the sha1sum of `PROXMOX ARCHIVE FORMAT`.
+
+  * This is a clear cut from the catar format now, since we're not really
+    using just a subset anymore, but also slightly different (due to hardlink
+    support and thereby also dropped composability of the format).
+
+ -- Proxmox Support Team <support@proxmox.com>  Thu, 25 Jun 2020 09:39:15 +0200
+
 rust-pxar (0.1.9-1) pve; urgency=medium
 
   * more useful/correct ReadAt trait definition
