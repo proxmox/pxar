@@ -27,7 +27,7 @@ pub struct Encoder<'a, T: SeqWrite + 'a> {
 impl<'a, T: io::Write + 'a> Encoder<'a, StandardWriter<T>> {
     /// Encode a `pxar` archive into a regular `std::io::Write` output.
     #[inline]
-    pub fn from_std(output: T, metadata: &Metadata) -> io::Result<Encoder<StandardWriter<T>>> {
+    pub fn from_std(output: T, metadata: &Metadata) -> io::Result<Encoder<'a, StandardWriter<T>>> {
         Encoder::new(StandardWriter::new(output), metadata)
     }
 }
