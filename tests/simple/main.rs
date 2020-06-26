@@ -33,7 +33,9 @@ fn test1() {
     let mut encoder =
         encoder::Encoder::from_std(&mut file, &test_fs.metadata).expect("failed to create encoder");
     encode_directory(&mut encoder, &test_fs).expect("failed to encode test file system");
-    encoder.finish();
+    encoder
+        .finish()
+        .expect("failed to finish encoding the pxar archive");
 
     assert!(!file.is_empty(), "encoder did not write any data");
 

@@ -8,7 +8,7 @@ use pxar::decoder::sync as decoder;
 use pxar::decoder::SeqRead;
 use pxar::encoder::sync as encoder;
 use pxar::encoder::{LinkOffset, SeqWrite};
-use pxar::format::{self, mode, Device};
+use pxar::format::{mode, Device};
 use pxar::EntryKind as PxarEntryKind;
 use pxar::Metadata;
 
@@ -179,8 +179,6 @@ impl Entry {
                 self.no_hardlink()?;
                 let _: () = encoder.add_socket(&self.metadata, &self.name)?;
             }
-
-            other => bail!("TODO: encode_entry for {:?}", other),
         }
         Ok(())
     }
@@ -239,6 +237,14 @@ impl Entry {
                             format_err!("failed to get contents for file entry: {:?}", item.path())
                         })?
                         .read_to_end(&mut data)?;
+                    if data.len() as u64 != *size {
+                        bail!(
+                            "file {:?} was advertised to be of size {} but we read {} bytes",
+                            item.path(),
+                            size,
+                            data.len(),
+                        );
+                    }
                     contents.push(make_entry()?.entry(EntryKind::File(data)));
                 }
                 PxarEntryKind::Directory => {
@@ -270,7 +276,6 @@ impl Entry {
                 PxarEntryKind::Socket => {
                     contents.push(make_entry()?.entry(EntryKind::Socket));
                 }
-                other => todo!("decode for kind {:?}", other),
             }
         }
 
