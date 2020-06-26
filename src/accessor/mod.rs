@@ -139,6 +139,33 @@ impl ReadAt for Arc<dyn ReadAt + Send + Sync + 'static> {
     }
 }
 
+/// Convenience impl for in-memory byte slices.
+impl ReadAt for &'_ [u8] {
+    fn start_read_at<'a>(
+        self: Pin<&'a Self>,
+        _cx: &mut Context,
+        buf: &'a mut [u8],
+        offset: u64,
+    ) -> MaybeReady<io::Result<usize>, ReadAtOperation<'a>> {
+        if offset >= self.len() as u64 {
+            return MaybeReady::Ready(Ok(0));
+        }
+
+        let offset = offset as usize;
+        let end = (offset + buf.len()).min(self.len());
+        let size = end - offset;
+        buf[..size].copy_from_slice(&self[offset..end]);
+        MaybeReady::Ready(Ok(size))
+    }
+
+    fn poll_complete<'a>(
+        self: Pin<&'a Self>,
+        _op: ReadAtOperation<'a>,
+    ) -> MaybeReady<io::Result<usize>, ReadAtOperation<'a>> {
+        panic!("start_read_at on byte slice returned Pending");
+    }
+}
+
 #[derive(Clone)]
 struct Caches {
     /// The goodbye table cache maps goodbye table offsets to cache entries.
