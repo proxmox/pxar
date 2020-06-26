@@ -1,8 +1,10 @@
+use std::path::Path;
+
 use anyhow::{bail, Error};
 
 use pxar::decoder::sync as decoder;
 use pxar::encoder::sync as encoder;
-use pxar::encoder::{LinkOffset, SeqWrite};
+use pxar::encoder::SeqWrite;
 
 mod fs;
 
@@ -10,10 +12,12 @@ fn encode_directory<T: SeqWrite>(
     encoder: &mut encoder::Encoder<T>,
     entry: &fs::Entry,
 ) -> Result<(), Error> {
+    let mut hardlinks = fs::HardlinkList::new();
+
     match &entry.entry {
         fs::EntryKind::Directory(entries) => {
             for entry in entries {
-                entry.encode_into(encoder)?;
+                entry.encode_into(encoder, &mut hardlinks, Path::new("/"))?;
             }
             Ok(())
         }
@@ -33,5 +37,10 @@ fn test1() {
 
     assert!(!file.is_empty(), "encoder did not write any data");
 
-    let mut decoder = decoder::Decoder::from_std(&mut &file[..]).expect("failed to create decoder");
+    let mut input = &file[..];
+    let mut decoder = decoder::Decoder::from_std(&mut input).expect("failed to create decoder");
+    let decoded_fs =
+        fs::Entry::decode_from(&mut decoder).expect("failed to decode previously encoded archive");
+
+    assert_eq!(test_fs, decoded_fs);
 }
