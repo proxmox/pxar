@@ -3,7 +3,7 @@ all: check
 
 .PHONY: check
 check:
-	cargo test
+	cargo test --all-features
 
 .PHONY: dinstall
 dinstall: deb
