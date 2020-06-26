@@ -28,6 +28,15 @@ pub struct User {
     //pub name: Vec<u64>, not impl for now
 }
 
+impl User {
+    pub fn new(uid: u64, permissions: u64) -> Self {
+        Self {
+            uid,
+            permissions: Permissions(permissions),
+        }
+    }
+}
+
 // TODO if also name is impl, sort by uid, then by name and last by permissions
 impl Ord for User {
     fn cmp(&self, other: &User) -> Ordering {
@@ -52,6 +61,15 @@ pub struct Group {
     pub gid: u64,
     pub permissions: Permissions,
     //pub name: Vec<u64>, not impl for now
+}
+
+impl Group {
+    pub fn new(gid: u64, permissions: u64) -> Self {
+        Self {
+            gid,
+            permissions: Permissions(permissions),
+        }
+    }
 }
 
 // TODO if also name is impl, sort by gid, then by name and last by permissions
