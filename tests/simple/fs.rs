@@ -19,7 +19,7 @@ pub struct HardlinkInfo {
 
 pub type HardlinkList = HashMap<String, HardlinkInfo>;
 
-#[derive(Debug, Eq)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum EntryKind {
     Invalid,
     File(Vec<u8>),
@@ -29,25 +29,6 @@ pub enum EntryKind {
     Device(format::Device),
     Socket,
     Fifo,
-}
-
-impl PartialEq for EntryKind {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            // When decoding we don't get our hardlink "names" back, so this cannot be part of the
-            // comparison. Hardlink consistency needs to be checked separately.
-            (EntryKind::Hardlink(a), EntryKind::Hardlink(b)) => a == b,
-
-            (EntryKind::Invalid, EntryKind::Invalid) => true,
-            (EntryKind::File(a), EntryKind::File(b)) => a == b,
-            (EntryKind::Directory(a), EntryKind::Directory(b)) => a == b,
-            (EntryKind::Symlink(a), EntryKind::Symlink(b)) => a == b,
-            (EntryKind::Device(a), EntryKind::Device(b)) => a == b,
-            (EntryKind::Socket, EntryKind::Socket) => true,
-            (EntryKind::Fifo, EntryKind::Fifo) => true,
-            _ => false,
-        }
-    }
 }
 
 #[derive(Debug, Eq)]
