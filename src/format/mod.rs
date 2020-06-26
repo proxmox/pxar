@@ -116,8 +116,8 @@ impl Header {
             PXAR_ACL_GROUP_OBJ => size_of::<acl::GroupObject> as u64,
             PXAR_QUOTA_PROJID => size_of::<QuotaProjectId>() as u64,
             PXAR_ENTRY => size_of::<Entry>() as u64,
-            PXAR_PAYLOAD | PXAR_GOODBYE => u64::MAX - (size_of::<Self>() as u64),
-            _ => u64::MAX - (size_of::<Self>() as u64),
+            PXAR_PAYLOAD | PXAR_GOODBYE => std::u64::MAX - (size_of::<Self>() as u64),
+            _ => std::u64::MAX - (size_of::<Self>() as u64),
         }
     }
 
