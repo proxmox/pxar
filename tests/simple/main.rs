@@ -1,10 +1,13 @@
+use std::io::Read;
 use std::path::Path;
 
 use anyhow::{bail, Error};
 
+use pxar::accessor::sync as accessor;
 use pxar::decoder::sync as decoder;
 use pxar::encoder::sync as encoder;
 use pxar::encoder::SeqWrite;
+use pxar::EntryKind as PxarEntryKind;
 
 mod fs;
 
@@ -45,4 +48,40 @@ fn test1() {
         fs::Entry::decode_from(&mut decoder).expect("failed to decode previously encoded archive");
 
     assert_eq!(test_fs, decoded_fs);
+
+    let accessor = accessor::Accessor::new(&file[..], file.len() as u64)
+        .expect("failed to create random access reader for encoded archive");
+
+    check_bunzip2(&accessor);
+}
+
+fn check_bunzip2(accessor: &accessor::Accessor<&[u8]>) {
+    let root = accessor
+        .open_root()
+        .expect("failed to open root of encoded archive");
+
+    let bunzip2 = root
+        .lookup("usr/bin/bunzip2")
+        .expect("failed to lookup usr/bin/bunzip2 in test data")
+        .expect("missing usr/bin/bunzip2 in test data");
+    match bunzip2.kind() {
+        PxarEntryKind::Hardlink(link) => assert_eq!(link.as_os_str(), "/usr/bin/bzip2"),
+        _ => panic!("expected usr/bin/bunzip2 in test data to be a hardlink"),
+    }
+    let bzip2 = accessor
+        .follow_hardlink(&bunzip2)
+        .expect("failed to follow usr/bin/bunzip2 hardlink in test data");
+    assert!(bzip2.is_regular_file());
+    let mut content = String::new();
+    let len = bzip2
+        .contents()
+        .expect("failed to get contents of bzip2 file")
+        .read_to_string(&mut content)
+        .expect("failed to read bzip2 file into a string");
+    match bzip2.kind() {
+        PxarEntryKind::File { size, .. } => assert_eq!(len as u64, *size),
+        _ => panic!("expected usr/bin/bzip2 in test data to be a regular file"),
+    }
+
+    assert_eq!(content, "This is the bzip2 executable");
 }

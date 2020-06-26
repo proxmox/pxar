@@ -315,7 +315,7 @@ pub fn test_fs() -> Entry {
                         .entry(EntryKind::Directory(vec![
                             Entry::new("bzip2")
                                 .metadata(Metadata::file_builder(0o755))
-                                .entry(EntryKind::File(b"This is an executable".to_vec()))
+                                .entry(EntryKind::File(b"This is the bzip2 executable".to_vec()))
                                 .link_key("/usr/bin/bzip2"),
                             Entry::new("cat")
                                 .metadata(Metadata::file_builder(0o755))
