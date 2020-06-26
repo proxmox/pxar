@@ -8,6 +8,7 @@ use pxar::decoder::sync as decoder;
 use pxar::decoder::SeqRead;
 use pxar::encoder::sync as encoder;
 use pxar::encoder::{LinkOffset, SeqWrite};
+use pxar::format::acl::{self, Permissions};
 use pxar::format::{mode, Device};
 use pxar::EntryKind as PxarEntryKind;
 use pxar::Metadata;
@@ -336,11 +337,24 @@ pub fn test_fs() -> Entry {
                         .metadata(Metadata::builder(mode::IFBLK | 0o666))
                         .entry(EntryKind::Device(Device { major: 7, minor: 0 })),
                     Entry::new("loop1")
-                        .metadata(Metadata::builder(mode::IFBLK | 0o666))
+                        .metadata(
+                            Metadata::builder(mode::IFBLK | 0o666)
+                                .acl_user(acl::User::new(1000, 6))
+                                .acl_group(acl::Group::new(1000, 6))
+                        )
                         .entry(EntryKind::Device(Device { major: 7, minor: 1 })),
                 ])),
             Entry::new("run")
-                .metadata(Metadata::dir_builder(0o755))
+                .metadata(
+                    Metadata::dir_builder(0o755)
+                        .default_acl(Some(acl::Default {
+                            user_obj_permissions: Permissions(acl::READ | acl::WRITE),
+                            group_obj_permissions: Permissions(acl::READ),
+                            other_permissions: Permissions(acl::READ),
+                            mask_permissions: Permissions::NO_MASK,
+                        }))
+                        .default_acl_user(acl::User::new(1001, acl::READ))
+                )
                 .entry(EntryKind::Directory(vec![
                     Entry::new("fifo0")
                         .metadata(Metadata::builder(mode::IFIFO | 0o666))
