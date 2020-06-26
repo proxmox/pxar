@@ -8,7 +8,7 @@ use pxar::decoder::sync as decoder;
 use pxar::decoder::SeqRead;
 use pxar::encoder::sync as encoder;
 use pxar::encoder::{LinkOffset, SeqWrite};
-use pxar::format::{self, mode};
+use pxar::format::{self, mode, Device};
 use pxar::EntryKind as PxarEntryKind;
 use pxar::Metadata;
 
@@ -29,7 +29,7 @@ pub enum EntryKind {
     Directory(Vec<Entry>),
     Symlink(PathBuf),
     Hardlink(String),
-    Device(format::Device),
+    Device(Device),
     Socket,
     Fifo,
 }
@@ -165,6 +165,21 @@ impl Entry {
                 }
             }
 
+            EntryKind::Device(device) => {
+                self.no_hardlink()?;
+                let _: () = encoder.add_device(&self.metadata, &self.name, device.clone())?;
+            }
+
+            EntryKind::Fifo => {
+                self.no_hardlink()?;
+                let _: () = encoder.add_fifo(&self.metadata, &self.name)?;
+            }
+
+            EntryKind::Socket => {
+                self.no_hardlink()?;
+                let _: () = encoder.add_socket(&self.metadata, &self.name)?;
+            }
+
             other => bail!("TODO: encode_entry for {:?}", other),
         }
         Ok(())
@@ -246,7 +261,16 @@ impl Entry {
                         )),
                     );
                 }
-                other => todo!("pxar kind {:?}", other),
+                PxarEntryKind::Device(device) => {
+                    contents.push(make_entry()?.entry(EntryKind::Device(device.clone())));
+                }
+                PxarEntryKind::Fifo => {
+                    contents.push(make_entry()?.entry(EntryKind::Fifo));
+                }
+                PxarEntryKind::Socket => {
+                    contents.push(make_entry()?.entry(EntryKind::Socket));
+                }
+                other => todo!("decode for kind {:?}", other),
             }
         }
 
@@ -293,6 +317,32 @@ pub fn test_fs() -> Entry {
                             Entry::new("bunzip2")
                                 .entry(EntryKind::Hardlink("/usr/bin/bzip2".to_string())),
                         ])),
+                ])),
+            Entry::new("dev")
+                .metadata(Metadata::dir_builder(0o755))
+                .entry(EntryKind::Directory(vec![
+                    Entry::new("null")
+                        .metadata(Metadata::builder(mode::IFCHR | 0o666))
+                        .entry(EntryKind::Device(Device { major: 1, minor: 3 })),
+                    Entry::new("zero")
+                        .metadata(Metadata::builder(mode::IFCHR | 0o666))
+                        .entry(EntryKind::Device(Device { major: 1, minor: 5 })),
+                    Entry::new("loop0")
+                        .metadata(Metadata::builder(mode::IFBLK | 0o666))
+                        .entry(EntryKind::Device(Device { major: 7, minor: 0 })),
+                    Entry::new("loop1")
+                        .metadata(Metadata::builder(mode::IFBLK | 0o666))
+                        .entry(EntryKind::Device(Device { major: 7, minor: 1 })),
+                ])),
+            Entry::new("run")
+                .metadata(Metadata::dir_builder(0o755))
+                .entry(EntryKind::Directory(vec![
+                    Entry::new("fifo0")
+                        .metadata(Metadata::builder(mode::IFIFO | 0o666))
+                        .entry(EntryKind::Fifo),
+                    Entry::new("sock0")
+                        .metadata(Metadata::builder(mode::IFSOCK | 0o600))
+                        .entry(EntryKind::Socket),
                 ])),
         ]))
 }
