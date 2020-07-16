@@ -113,7 +113,7 @@ impl Header {
             PXAR_ACL_USER | PXAR_ACL_DEFAULT_USER => size_of::<acl::User>() as u64,
             PXAR_ACL_GROUP | PXAR_ACL_DEFAULT_GROUP => size_of::<acl::Group>() as u64,
             PXAR_ACL_DEFAULT => size_of::<acl::Default>() as u64,
-            PXAR_ACL_GROUP_OBJ => size_of::<acl::GroupObject> as u64,
+            PXAR_ACL_GROUP_OBJ => size_of::<acl::GroupObject>() as u64,
             PXAR_QUOTA_PROJID => size_of::<QuotaProjectId>() as u64,
             PXAR_ENTRY => size_of::<Entry>() as u64,
             PXAR_PAYLOAD | PXAR_GOODBYE => std::u64::MAX - (size_of::<Self>() as u64),
