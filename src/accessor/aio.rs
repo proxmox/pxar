@@ -92,7 +92,7 @@ impl<T: ReadAt> Accessor<T> {
     }
 
     /// Open a directory handle to the root of the pxar archive.
-    pub async fn open_root_ref<'a>(&'a self) -> io::Result<Directory<&'a dyn ReadAt>> {
+    pub async fn open_root_ref(&self) -> io::Result<Directory<&dyn ReadAt>> {
         Ok(Directory::new(self.inner.open_root_ref().await?))
     }
 
@@ -117,11 +117,21 @@ impl<T: Clone + ReadAt> Accessor<T> {
     }
 
     /// Allow opening a directory at a specified offset.
+    ///
+    /// # Safety
+    ///
+    /// This should only be used with offsets known to point to the end of a directory, otherwise
+    /// this usually fails, unless the data otherwise happens to look like a valid directory.
     pub async unsafe fn open_dir_at_end(&self, offset: u64) -> io::Result<Directory<T>> {
         Ok(Directory::new(self.inner.open_dir_at_end(offset).await?))
     }
 
     /// Allow opening a regular file from a specified range.
+    ///
+    /// # Safety
+    ///
+    /// Should only be used with `entry_range_info`s originating from the same archive, otherwise
+    /// the result will be undefined and likely fail (or contain unexpected data).
     pub async unsafe fn open_file_at_range(
         &self,
         entry_range_info: &accessor::EntryRangeInfo,
@@ -132,6 +142,11 @@ impl<T: Clone + ReadAt> Accessor<T> {
     }
 
     /// Allow opening arbitrary contents from a specific range.
+    ///
+    /// # Safety
+    ///
+    /// This will provide a reader over an arbitrary range of the archive file, so unless this
+    /// comes from a actual file entry data, the contents might not make much sense.
     pub unsafe fn open_contents_at_range(&self, range: Range<u64>) -> FileContents<T> {
         FileContents {
             inner: self.inner.open_contents_at_range(range),
@@ -186,7 +201,7 @@ impl<T: Clone + ReadAt> Directory<T> {
     }
 
     /// Get an iterator over the directory's contents.
-    pub fn read_dir<'a>(&'a self) -> ReadDir<'a, T> {
+    pub fn read_dir(&self) -> ReadDir<T> {
         ReadDir {
             inner: self.inner.read_dir(),
         }
@@ -313,12 +328,18 @@ impl<'a, T: Clone + ReadAt> DirEntry<'a, T> {
     }
 }
 
+/// File content read future result.
+struct ReadResult {
+    len: usize,
+    buffer: Vec<u8>,
+}
+
 /// A reader for file contents.
 pub struct FileContents<T> {
     inner: accessor::FileContentsImpl<T>,
     at: u64,
     buffer: Vec<u8>,
-    future: Option<Pin<Box<dyn Future<Output = io::Result<(usize, Vec<u8>)>> + 'static>>>,
+    future: Option<Pin<Box<dyn Future<Output = io::Result<ReadResult>> + 'static>>>,
 }
 
 // We lose `Send` via the boxed trait object and don't want to force the trait object to
@@ -343,10 +364,10 @@ impl<T: Clone + ReadAt> FileContents<T> {
                     util::scale_read_buffer(&mut buffer, dest.len());
                     let reader: accessor::FileContentsImpl<T> = this.inner.clone();
                     let at = this.at;
-                    let future: Pin<Box<dyn Future<Output = io::Result<(usize, Vec<u8>)>>>> =
+                    let future: Pin<Box<dyn Future<Output = io::Result<ReadResult>>>> =
                         Box::pin(async move {
-                            let got = reader.read_at(&mut buffer, at).await?;
-                            io::Result::Ok((got, buffer))
+                            let len = reader.read_at(&mut buffer, at).await?;
+                            io::Result::Ok(ReadResult { len, buffer })
                         });
                     // This future has the lifetime from T. Self also has this lifetime and we
                     // store this in a pinned self. T maybe a reference with a non-'static life
@@ -360,7 +381,7 @@ impl<T: Clone + ReadAt> FileContents<T> {
                         return Poll::Pending;
                     }
                     Poll::Ready(Err(err)) => return Poll::Ready(Err(err)),
-                    Poll::Ready(Ok((got, buffer))) => {
+                    Poll::Ready(Ok(ReadResult { len: got, buffer })) => {
                         this.buffer = buffer;
                         this.at += got as u64;
                         let len = got.min(dest.len());

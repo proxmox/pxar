@@ -202,7 +202,7 @@ impl<T: ReadAt> AccessorImpl<T> {
         self.size
     }
 
-    pub async fn open_root_ref<'a>(&'a self) -> io::Result<DirectoryImpl<&'a dyn ReadAt>> {
+    pub async fn open_root_ref(&self) -> io::Result<DirectoryImpl<&dyn ReadAt>> {
         DirectoryImpl::open_at_end(
             &self.input as &dyn ReadAt,
             self.size,
@@ -218,7 +218,7 @@ impl<T: ReadAt> AccessorImpl<T> {
     ) {
         let new_caches = Arc::new(Caches {
             gbt_cache: cache,
-            ..*self.caches
+            //..*self.caches
         });
         self.caches = new_caches;
     }
@@ -436,7 +436,6 @@ impl<T: Clone + ReadAt> DirectoryImpl<T> {
                 len * size_of::<GoodbyeItem>(),
             );
             read_exact_at(&self.input, slice, self.table_offset()).await?;
-            drop(slice);
         }
         Ok(Arc::from(data))
     }
@@ -608,6 +607,8 @@ impl<T: Clone + ReadAt> DirectoryImpl<T> {
         }
     }
 
+    // while clippy is technically right about this, the compiler won't accept it (yet)
+    #[allow(clippy::needless_lifetimes)]
     async fn get_cursor<'a>(&'a self, index: usize) -> io::Result<DirEntryImpl<'a, T>> {
         let entry = &self.table[index];
         let file_goodbye_ofs = entry.offset;
@@ -881,12 +882,18 @@ impl<T: Clone + ReadAt> ReadAt for FileContentsImpl<T> {
     }
 }
 
+/// File content read future result.
+struct ReadResult {
+    len: usize,
+    buffer: Vec<u8>,
+}
+
 #[doc(hidden)]
 pub struct SeqReadAtAdapter<T> {
     input: T,
     range: Range<u64>,
     buffer: Vec<u8>,
-    future: Option<Pin<Box<dyn Future<Output = io::Result<(usize, Vec<u8>)>> + 'static>>>,
+    future: Option<Pin<Box<dyn Future<Output = io::Result<ReadResult>> + 'static>>>,
 }
 
 // We lose `Send` via the boxed trait object and don't want to force the trait object to
@@ -943,10 +950,10 @@ impl<T: ReadAt> decoder::SeqRead for SeqReadAtAdapter<T> {
                     let reader = &this.input;
 
                     let at = this.range.start;
-                    let future: Pin<Box<dyn Future<Output = io::Result<(usize, Vec<u8>)>>>> =
+                    let future: Pin<Box<dyn Future<Output = io::Result<ReadResult>>>> =
                         Box::pin(async move {
-                            let got = reader.read_at(&mut buffer, at).await?;
-                            io::Result::Ok((got, buffer))
+                            let len = reader.read_at(&mut buffer, at).await?;
+                            io::Result::Ok(ReadResult { len, buffer })
                         });
                     // Ditch the self-reference life-time now:
                     this.future = Some(unsafe { mem::transmute(future) });
@@ -957,7 +964,7 @@ impl<T: ReadAt> decoder::SeqRead for SeqReadAtAdapter<T> {
                         return Poll::Pending;
                     }
                     Poll::Ready(Err(err)) => return Poll::Ready(Err(err)),
-                    Poll::Ready(Ok((got, buffer))) => {
+                    Poll::Ready(Ok(ReadResult { len: got, buffer })) => {
                         this.buffer = buffer;
                         this.range.start += got as u64;
                         let len = got.min(dest.len());

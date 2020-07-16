@@ -297,7 +297,7 @@ mod futures_writer {
         fn poll_close(self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
             let this = unsafe { self.get_unchecked_mut() };
             match this.inner.as_mut() {
-                None => return Poll::Ready(Ok(())),
+                None => Poll::Ready(Ok(())),
                 Some(inner) => {
                     ready!(unsafe { Pin::new_unchecked(inner).poll_close(cx) })?;
                     this.inner = None;
@@ -368,7 +368,7 @@ mod tokio_writer {
         fn poll_close(self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
             let this = unsafe { self.get_unchecked_mut() };
             match this.inner.as_mut() {
-                None => return Poll::Ready(Ok(())),
+                None => Poll::Ready(Ok(())),
                 Some(inner) => {
                     ready!(unsafe { Pin::new_unchecked(inner).poll_shutdown(cx) })?;
                     this.inner = None;

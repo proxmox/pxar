@@ -64,11 +64,8 @@ impl From<Stat> for Metadata {
 
 impl From<&std::fs::Metadata> for Metadata {
     fn from(meta: &std::fs::Metadata) -> Metadata {
-        let this = Self::from(Stat::from(meta));
-
-        // FIXME: fill the remaining metadata
-
-        this
+        // NOTE: fill the remaining metadata via feature flags?
+        Self::from(Stat::from(meta))
     }
 }
 
@@ -387,7 +384,7 @@ impl Entry {
     /// Convenience method to get just the file name portion of the current path.
     #[inline]
     pub fn file_name(&self) -> &OsStr {
-        self.path.file_name().unwrap_or(OsStr::new(""))
+        self.path.file_name().unwrap_or_else(|| OsStr::new(""))
     }
 
     /// Get the file metadata.

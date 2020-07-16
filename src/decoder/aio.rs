@@ -57,6 +57,9 @@ impl<T: SeqRead> Decoder<T> {
         Self { inner }
     }
 
+    // I would normally agree with clippy, but this is async and we can at most implement Stream,
+    // which we do with feature flags...
+    #[allow(clippy::should_implement_trait)]
     /// If this is a directory entry, get the next item inside the directory.
     pub async fn next(&mut self) -> Option<io::Result<Entry>> {
         self.inner.next_do().await.transpose()
@@ -87,6 +90,7 @@ mod stream {
     ///
     /// As long as streams are poll-based this wrapper is required to turn `async fn next()` into
     /// `Stream`'s `poll_next()` interface.
+    #[allow(clippy::type_complexity)] // yeah no
     pub struct DecoderStream<T> {
         inner: super::Decoder<T>,
         future: Option<Pin<Box<dyn Future<Output = Option<io::Result<Entry>>>>>>,

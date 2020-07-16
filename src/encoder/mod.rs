@@ -506,7 +506,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
                 entry_offset,
                 files_offset,
                 file_offset: Some(file_offset),
-                file_hash: file_hash,
+                file_hash,
                 ..Default::default()
             },
             parent: Some(&mut self.state),
@@ -605,7 +605,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         seq_write_pxar_struct_entry(
             &mut self.output,
             format::PXAR_QUOTA_PROJID,
-            quota_project_id.clone(),
+            *quota_project_id,
         )
         .await
     }

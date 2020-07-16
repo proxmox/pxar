@@ -293,7 +293,7 @@ impl<I: SeqRead> DecoderImpl<I> {
         }
     }
 
-    pub fn content_reader<'a>(&'a mut self) -> Option<Contents<'a, I>> {
+    pub fn content_reader(&mut self) -> Option<Contents<I>> {
         if let State::InPayload { offset } = &mut self.state {
             Some(Contents::new(
                 &mut self.input,

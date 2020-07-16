@@ -327,15 +327,13 @@ impl From<&std::fs::Metadata> for Entry {
 
         let file_type = meta.file_type();
         let mode = this.mode;
-        let this = if file_type.is_dir() {
+        if file_type.is_dir() {
             this.mode(mode | mode::IFDIR)
         } else if file_type.is_symlink() {
             this.mode(mode | mode::IFLNK)
         } else {
             this.mode(mode | mode::IFREG)
-        };
-
-        this
+        }
     }
 }
 

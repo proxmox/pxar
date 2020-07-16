@@ -54,6 +54,9 @@ impl<T: SeqRead> Decoder<T> {
         Self { inner }
     }
 
+    // I would normally agree with clippy, but this here is to be consistent with the async
+    // counterpart, and we *do* implement Iterator as well, so that's fine!
+    #[allow(clippy::should_implement_trait)]
     /// If this is a directory entry, get the next item inside the directory.
     pub fn next(&mut self) -> Option<io::Result<Entry>> {
         poll_result_once(self.inner.next_do()).transpose()
