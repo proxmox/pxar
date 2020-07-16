@@ -1,3 +1,21 @@
+rust-pxar (0.2.1-1) pve; urgency=medium
+
+  * sync encoder: fix metadata lifetime leaking into encoder
+
+  * add builder for metadata
+
+  * add initial data testsuite
+
+  * minor rustc version compatibility improvement
+
+  * implement ReadAt for byte slices
+
+  * fix maximum allowed size check for acl group objects (found via a clippy lint)
+
+  * fix various clippy lints
+
+ -- Proxmox Support Team <support@proxmox.com>  Thu, 16 Jul 2020 11:41:49 +0200
+
 rust-pxar (0.2.0-1) pve; urgency=medium
 
   * Archive format compatibility breakage:
