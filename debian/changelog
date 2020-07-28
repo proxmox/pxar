@@ -1,3 +1,11 @@
+rust-pxar (0.3.0-1) pve; urgency=medium
+
+  * introduce 96 bit time stamp type with support for negative timestamps
+
+  * introduce PXAR_ENTRY version 2 header type
+
+ -- Proxmox Support Team <support@proxmox.com>  Tue, 28 Jul 2020 11:56:47 +0200
+
 rust-pxar (0.2.1-1) pve; urgency=medium
 
   * sync encoder: fix metadata lifetime leaking into encoder
