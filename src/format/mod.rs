@@ -241,7 +241,7 @@ impl StatxTimestamp {
     pub fn from_duration_before_epoch(duration: Duration) -> Self {
         match duration.subsec_nanos() {
             0 => Self {
-                secs: duration.as_secs() as i64,
+                secs: -(duration.as_secs() as i64),
                 nanos: 0,
             },
             nanos => Self {
@@ -257,6 +257,7 @@ impl StatxTimestamp {
         if self.secs >= 0 {
             SignedDuration::Positive(Duration::new(self.secs as u64, self.nanos))
         } else {
+            // this handles the nanos=0 case as `Duration::new()` performs the carry-over.
             SignedDuration::Negative(Duration::new(
                 -(self.secs + 1) as u64,
                 1_000_000_000 - self.nanos,
@@ -298,8 +299,18 @@ fn test_statx_timestamp() {
         }
     );
     assert_eq!(tx.system_time(), system_time);
-}
 
+    let system_time = SystemTime::UNIX_EPOCH - Duration::new(-MAY_1_1960_1530 as u64, 0);
+    let tx = StatxTimestamp::from(system_time);
+    assert_eq!(
+        tx,
+        StatxTimestamp {
+            secs: MAY_1_1960_1530,
+            nanos: 0,
+        }
+    );
+    assert_eq!(tx.system_time(), system_time);
+}
 #[derive(Clone, Debug, Default, Endian)]
 #[cfg_attr(feature = "test-harness", derive(Eq, PartialEq))]
 #[repr(C)]
