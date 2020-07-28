@@ -360,11 +360,22 @@ impl<I: SeqRead> DecoderImpl<I> {
             self.entry.kind = EntryKind::Hardlink(self.read_hardlink().await?);
 
             Ok(Some(self.entry.take()))
-        } else if header.htype == format::PXAR_ENTRY {
-            self.entry.metadata = Metadata {
-                stat: seq_read_entry(&mut self.input).await?,
-                ..Default::default()
-            };
+        } else if header.htype == format::PXAR_ENTRY || header.htype == format::PXAR_ENTRY_V1 {
+            if header.htype == format::PXAR_ENTRY {
+                self.entry.metadata = Metadata {
+                    stat: seq_read_entry(&mut self.input).await?,
+                    ..Default::default()
+                };
+            } else if header.htype == format::PXAR_ENTRY_V1 {
+                let stat: format::Entry_V1 = seq_read_entry(&mut self.input).await?;
+
+                self.entry.metadata = Metadata {
+                    stat: stat.into(),
+                    ..Default::default()
+                };
+            } else {
+                unreachable!();
+            }
 
             self.current_header = unsafe { mem::zeroed() };
 

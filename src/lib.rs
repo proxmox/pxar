@@ -2,7 +2,6 @@
 //!
 //! This implements a reader and writer for the proxmox archive format (.pxar).
 
-use std::convert::TryFrom;
 use std::ffi::OsStr;
 use std::mem;
 use std::path::{Path, PathBuf};
@@ -20,7 +19,6 @@ pub mod accessor;
 pub mod binary_tree_array;
 pub mod decoder;
 pub mod encoder;
-pub mod errors;
 
 /// Reexport of `format::Entry`. Since this conveys mostly information found via the `stat` syscall
 /// we mostly use this name for public interfaces.
@@ -125,8 +123,9 @@ impl Metadata {
         self.stat.is_socket()
     }
 
-    /// Get the mtime as duration since the epoch.
-    pub fn mtime_as_duration(&self) -> std::time::Duration {
+    /// Get the mtime as duration since the epoch. an `Ok` value is a positive duration, an `Err`
+    /// value is a negative duration.
+    pub fn mtime_as_duration(&self) -> format::SignedDuration {
         self.stat.mtime_as_duration()
     }
 
@@ -165,7 +164,7 @@ impl MetadataBuilder {
                     flags: 0,
                     uid: 0,
                     gid: 0,
-                    mtime: 0,
+                    mtime: format::StatxTimestamp::zero(),
                 },
                 xattrs: Vec::new(),
                 acl: Acl {
@@ -198,17 +197,20 @@ impl MetadataBuilder {
         self
     }
 
-    /// Set the modification time from a system time.
-    pub fn mtime(self, mtime: std::time::SystemTime) -> Result<Self, errors::TimeError> {
-        self.mtime_unix(mtime.duration_since(std::time::SystemTime::UNIX_EPOCH)?)
+    /// Set the modification time from a statx timespec value.
+    pub fn mtime_full(mut self, mtime: format::StatxTimestamp) -> Self {
+        self.inner.stat.mtime = mtime;
+        self
     }
 
     /// Set the modification time from a duration since the epoch (`SystemTime::UNIX_EPOCH`).
-    pub fn mtime_unix(mut self, mtime: std::time::Duration) -> Result<Self, errors::TimeError> {
-        let nanos =
-            u64::try_from(mtime.as_nanos()).map_err(|_| errors::TimeError::Overflow(mtime))?;
-        self.inner.stat.mtime = nanos;
-        Ok(self)
+    pub fn mtime_unix(self, mtime: std::time::Duration) -> Self {
+        self.mtime_full(format::StatxTimestamp::from_duration_since_epoch(mtime))
+    }
+
+    /// Set the modification time from a system time.
+    pub fn mtime(self, mtime: std::time::SystemTime) -> Self {
+        self.mtime_full(mtime.into())
     }
 
     /// Set the ownership information.

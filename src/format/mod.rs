@@ -78,7 +78,10 @@ pub mod mode {
     pub const ISVTX  : u64 = 0o0001000;
 }
 
-pub const PXAR_ENTRY: u64 = 0x11da850a1c1cceff;
+/// Beginning of an entry (current version).
+pub const PXAR_ENTRY: u64 = 0xd5956474e588acef;
+/// Previous version of the entry struct
+pub const PXAR_ENTRY_V1: u64 = 0x11da850a1c1cceff;
 pub const PXAR_FILENAME: u64 = 0x16701121063917b3;
 pub const PXAR_SYMLINK: u64 = 0x27f971e7dbf5dc5f;
 pub const PXAR_DEVICE: u64 = 0x9fc9e906586d5ce9;
@@ -300,12 +303,35 @@ fn test_statx_timestamp() {
 #[derive(Clone, Debug, Default, Endian)]
 #[cfg_attr(feature = "test-harness", derive(Eq, PartialEq))]
 #[repr(C)]
-pub struct Entry {
+pub struct Entry_V1 {
     pub mode: u64,
     pub flags: u64,
     pub uid: u32,
     pub gid: u32,
     pub mtime: u64,
+}
+
+impl Into<Entry> for Entry_V1 {
+    fn into(self) -> Entry {
+        Entry {
+            mode: self.mode,
+            flags: self.flags,
+            uid: self.uid,
+            gid: self.gid,
+            mtime: StatxTimestamp::from_duration_since_epoch(Duration::from_nanos(self.mtime)),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, Endian)]
+#[cfg_attr(feature = "test-harness", derive(Eq, PartialEq))]
+#[repr(C)]
+pub struct Entry {
+    pub mode: u64,
+    pub flags: u64,
+    pub uid: u32,
+    pub gid: u32,
+    pub mtime: StatxTimestamp,
 }
 
 /// Builder pattern methods.
@@ -326,7 +352,7 @@ impl Entry {
         Self { gid, ..self }
     }
 
-    pub const fn mtime(self, mtime: u64) -> Self {
+    pub const fn mtime(self, mtime: StatxTimestamp) -> Self {
         Self { mtime, ..self }
     }
 
@@ -363,9 +389,10 @@ impl Entry {
 
 /// Convenience accessor methods.
 impl Entry {
-    /// Get the mtime as duration since the epoch.
-    pub fn mtime_as_duration(&self) -> std::time::Duration {
-        std::time::Duration::from_nanos(self.mtime)
+    /// Get the mtime as duration since the epoch. an `Ok` value is a positive duration, an `Err`
+    /// value is a negative duration.
+    pub fn mtime_as_duration(&self) -> SignedDuration {
+        self.mtime.to_duration()
     }
 
     /// Get the file type portion of the mode bitfield.
@@ -449,12 +476,7 @@ impl From<&std::fs::Metadata> for Entry {
             .mode(meta.mode() as u64);
 
         let this = match meta.modified() {
-            Ok(mtime) => this.mtime(
-                mtime
-                    .duration_since(std::time::SystemTime::UNIX_EPOCH)
-                    .map(|dur| dur.as_nanos() as u64)
-                    .unwrap_or(0u64),
-            ),
+            Ok(mtime) => this.mtime(mtime.into()),
             Err(_) => this,
         };
 
