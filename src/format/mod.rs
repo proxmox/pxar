@@ -43,6 +43,7 @@ use std::io;
 use std::mem::size_of;
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
+use std::time::{Duration, SystemTime};
 
 use endian_trait::Endian;
 use siphasher::sip::SipHasher24;
@@ -192,6 +193,108 @@ impl Display for Header {
         };
         write!(f, "{} header ({:x})", readable, self.htype)
     }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SignedDuration {
+    Positive(Duration),
+    Negative(Duration),
+}
+
+#[derive(Clone, Debug, Default, Endian, Eq, PartialEq)]
+#[repr(C)]
+pub struct StatxTimestamp {
+    /// Seconds since the epoch (unix time).
+    pub secs: i64,
+
+    /// Nanoseconds since this struct's `secs`.
+    pub nanos: u32,
+}
+
+impl From<SystemTime> for StatxTimestamp {
+    fn from(time: SystemTime) -> Self {
+        match time.duration_since(SystemTime::UNIX_EPOCH) {
+            Ok(positive) => Self::from_duration_since_epoch(positive),
+            Err(negative) => Self::from_duration_before_epoch(negative.duration()),
+        }
+    }
+}
+
+impl StatxTimestamp {
+    /// `const` version of `Default`
+    pub const fn zero() -> Self {
+        Self { secs: 0, nanos: 0 }
+    }
+
+    /// Turn a positive duration relative to the unix epoch into a time stamp.
+    pub fn from_duration_since_epoch(duration: Duration) -> Self {
+        Self {
+            secs: duration.as_secs() as i64,
+            nanos: duration.subsec_nanos(),
+        }
+    }
+
+    /// Turn a *negative* duration from relative to the unix epoch into a time stamp.
+    pub fn from_duration_before_epoch(duration: Duration) -> Self {
+        match duration.subsec_nanos() {
+            0 => Self {
+                secs: duration.as_secs() as i64,
+                nanos: 0,
+            },
+            nanos => Self {
+                secs: -(duration.as_secs() as i64) - 1,
+                nanos: 1_000_000_000 - nanos,
+            },
+        }
+    }
+
+    /// Get the duration since the epoch. an `Ok` value is a positive duration, an `Err` value is a
+    /// negative duration.
+    pub fn to_duration(&self) -> SignedDuration {
+        if self.secs >= 0 {
+            SignedDuration::Positive(Duration::new(self.secs as u64, self.nanos))
+        } else {
+            SignedDuration::Negative(Duration::new(
+                -(self.secs + 1) as u64,
+                1_000_000_000 - self.nanos,
+            ))
+        }
+    }
+
+    /// Get a `std::time::SystemTime` from this time stamp.
+    pub fn system_time(&self) -> SystemTime {
+        match self.to_duration() {
+            SignedDuration::Positive(positive) => SystemTime::UNIX_EPOCH + positive,
+            SignedDuration::Negative(negative) => SystemTime::UNIX_EPOCH - negative,
+        }
+    }
+}
+
+#[test]
+fn test_statx_timestamp() {
+    const MAY_1_2015_1530: i64 = 1430487000;
+    let system_time = SystemTime::UNIX_EPOCH + Duration::new(MAY_1_2015_1530 as u64, 1_000_000);
+    let tx = StatxTimestamp::from(system_time);
+    assert_eq!(
+        tx,
+        StatxTimestamp {
+            secs: MAY_1_2015_1530,
+            nanos: 1_000_000,
+        }
+    );
+    assert_eq!(tx.system_time(), system_time);
+
+    const MAY_1_1960_1530: i64 = -305112600;
+    let system_time = SystemTime::UNIX_EPOCH - Duration::new(-MAY_1_1960_1530 as u64, 1_000_000);
+    let tx = StatxTimestamp::from(system_time);
+    assert_eq!(
+        tx,
+        StatxTimestamp {
+            secs: MAY_1_1960_1530 - 1,
+            nanos: 999_000_000,
+        }
+    );
+    assert_eq!(tx.system_time(), system_time);
 }
 
 #[derive(Clone, Debug, Default, Endian)]
