@@ -1,7 +1,16 @@
 use pxar::format::hash_filename;
 
 const CONSTANTS: &[(&str, &str, &str)] = &[
-    ("", "PXAR_ENTRY", "__PROXMOX_FORMAT_ENTRY__"),
+    (
+        "Beginning of an entry (current version).",
+        "PXAR_ENTRY",
+        "__PROXMOX_FORMAT_ENTRY_V2__",
+    ),
+    (
+        "Previous version of the entry struct",
+        "PXAR_ENTRY_V1",
+        "__PROXMOX_FORMAT_ENTRY__",
+    ),
     ("", "PXAR_FILENAME", "__PROXMOX_FORMAT_FILENAME__"),
     ("", "PXAR_SYMLINK", "__PROXMOX_FORMAT_SYMLINK__"),
     ("", "PXAR_DEVICE", "__PROXMOX_FORMAT_DEVICE__"),
