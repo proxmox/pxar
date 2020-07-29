@@ -11,16 +11,17 @@ dinstall: deb
 .PHONY: deb
 deb:
 	rm -rf build
+	mkdir build
 	debcargo package \
 	    --config "$(PWD)/debian/debcargo.toml" \
 	    --changelog-ready \
 	    --no-overlay-write-back \
-	    --directory "$(PWD)/build" \
+	    --directory "$(PWD)/build/pxar" \
 	    "pxar" \
 	    "$$(dpkg-parsechangelog -l "debian/changelog" -SVersion | sed -e 's/-.*//')"
 	echo system >build/rust-toolchain
-	(cd build && CARGO=/usr/bin/cargo RUSTC=/usr/bin/rustc dpkg-buildpackage -b -uc -us)
-	lintian *.deb
+	(cd build/pxar && CARGO=/usr/bin/cargo RUSTC=/usr/bin/rustc dpkg-buildpackage -b -uc -us)
+	lintian build/*.deb
 
 .PHONY: clean
 clean:
