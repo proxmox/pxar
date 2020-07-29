@@ -26,3 +26,10 @@ deb:
 clean:
 	rm -rf build *.deb *.buildinfo *.changes *.orig.tar.gz
 	cargo clean
+
+upload: deb
+	cd build; \
+	    dcmd --deb rust-pxar_*.changes \
+	    | grep -v '.changes$$' \
+	    | tar -cf- -T- \
+	    | ssh -X repoman@repo.proxmox.com upload --product devel --dist buster
