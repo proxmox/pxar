@@ -7,6 +7,7 @@ check:
 
 .PHONY: dinstall
 dinstall: deb
+	sudo -k dpkg -i build/librust-*.deb
 
 .PHONY: deb
 deb:
