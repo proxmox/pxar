@@ -400,8 +400,7 @@ impl Entry {
 
 /// Convenience accessor methods.
 impl Entry {
-    /// Get the mtime as duration since the epoch. an `Ok` value is a positive duration, an `Err`
-    /// value is a negative duration.
+    /// Get the mtime as duration since the epoch.
     pub fn mtime_as_duration(&self) -> SignedDuration {
         self.mtime.to_duration()
     }
