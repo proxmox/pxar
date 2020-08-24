@@ -1,3 +1,9 @@
+rust-pxar (0.4.0-1) pve; urgency=medium
+
+  * remove poll_close and poll_position from SeqWrite trait
+
+ -- Proxmox Support Team <support@proxmox.com>  Mon, 24 Aug 2020 11:54:19 +0200
+
 rust-pxar (0.3.0-1) pve; urgency=medium
 
   * introduce 96 bit time stamp type with support for negative timestamps
