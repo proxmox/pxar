@@ -193,15 +193,11 @@ impl<'a> io::Write for File<'a> {
 /// Pxar encoder write adapter for `std::io::Write`.
 pub struct StandardWriter<T> {
     inner: Option<T>,
-    position: u64,
 }
 
 impl<T: io::Write> StandardWriter<T> {
     pub fn new(inner: T) -> Self {
-        Self {
-            inner: Some(inner),
-            position: 0,
-        }
+        Self { inner: Some(inner) }
     }
 
     fn inner(&mut self) -> io::Result<&mut T> {
@@ -222,32 +218,10 @@ impl<T: io::Write> SeqWrite for StandardWriter<T> {
         buf: &[u8],
     ) -> Poll<io::Result<usize>> {
         let this = unsafe { self.get_unchecked_mut() };
-        Poll::Ready(match this.inner()?.write(buf) {
-            Ok(got) => {
-                this.position += got as u64;
-                Ok(got)
-            }
-            Err(err) => Err(err),
-        })
-    }
-
-    fn poll_position(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<io::Result<u64>> {
-        Poll::Ready(Ok(self.as_ref().position))
+        Poll::Ready(this.inner()?.write(buf))
     }
 
     fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<io::Result<()>> {
         Poll::Ready(self.pin_to_inner().and_then(|inner| inner.flush()))
-    }
-
-    fn poll_close(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<io::Result<()>> {
-        let this = unsafe { self.get_unchecked_mut() };
-        Poll::Ready(match this.inner.as_mut() {
-            None => Ok(()),
-            Some(inner) => {
-                inner.flush()?;
-                this.inner = None;
-                Ok(())
-            }
-        })
     }
 }

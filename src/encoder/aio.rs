@@ -250,15 +250,11 @@ mod futures_writer {
 
     pub struct FuturesWriter<T> {
         inner: Option<T>,
-        position: u64,
     }
 
     impl<T: futures::io::AsyncWrite> FuturesWriter<T> {
         pub fn new(inner: T) -> Self {
-            Self {
-                inner: Some(inner),
-                position: 0,
-            }
+            Self { inner: Some(inner) }
         }
 
         fn inner_mut(self: &mut Self) -> io::Result<Pin<&mut T>> {
@@ -281,29 +277,11 @@ mod futures_writer {
             buf: &[u8],
         ) -> Poll<io::Result<usize>> {
             let this = unsafe { self.get_unchecked_mut() };
-            let got = ready!(this.inner_mut()?.poll_write(cx, buf))?;
-            this.position += got as u64;
-            Poll::Ready(Ok(got))
-        }
-
-        fn poll_position(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<io::Result<u64>> {
-            Poll::Ready(Ok(self.as_ref().position))
+            this.inner_mut()?.poll_write(cx, buf)
         }
 
         fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
             self.inner()?.poll_flush(cx)
-        }
-
-        fn poll_close(self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
-            let this = unsafe { self.get_unchecked_mut() };
-            match this.inner.as_mut() {
-                None => Poll::Ready(Ok(())),
-                Some(inner) => {
-                    ready!(unsafe { Pin::new_unchecked(inner).poll_close(cx) })?;
-                    this.inner = None;
-                    Poll::Ready(Ok(()))
-                }
-            }
         }
     }
 }
@@ -321,15 +299,11 @@ mod tokio_writer {
 
     pub struct TokioWriter<T> {
         inner: Option<T>,
-        position: u64,
     }
 
     impl<T: tokio::io::AsyncWrite> TokioWriter<T> {
         pub fn new(inner: T) -> Self {
-            Self {
-                inner: Some(inner),
-                position: 0,
-            }
+            Self { inner: Some(inner) }
         }
 
         fn inner_mut(self: &mut Self) -> io::Result<Pin<&mut T>> {
@@ -352,29 +326,11 @@ mod tokio_writer {
             buf: &[u8],
         ) -> Poll<io::Result<usize>> {
             let this = unsafe { self.get_unchecked_mut() };
-            let got = ready!(this.inner_mut()?.poll_write(cx, buf))?;
-            this.position += got as u64;
-            Poll::Ready(Ok(got))
-        }
-
-        fn poll_position(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<io::Result<u64>> {
-            Poll::Ready(Ok(self.as_ref().position))
+            this.inner_mut()?.poll_write(cx, buf)
         }
 
         fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
             self.inner()?.poll_flush(cx)
-        }
-
-        fn poll_close(self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
-            let this = unsafe { self.get_unchecked_mut() };
-            match this.inner.as_mut() {
-                None => Poll::Ready(Ok(())),
-                Some(inner) => {
-                    ready!(unsafe { Pin::new_unchecked(inner).poll_shutdown(cx) })?;
-                    this.inner = None;
-                    Poll::Ready(Ok(()))
-                }
-            }
         }
     }
 }
