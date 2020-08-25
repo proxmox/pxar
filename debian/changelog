@@ -1,3 +1,9 @@
+rust-pxar (0.5.0-2) pve; urgency=medium
+
+  * packaging fixup
+
+ -- Proxmox Support Team <support@proxmox.com>  Tue, 25 Aug 2020 12:45:27 +0200
+
 rust-pxar (0.5.0-1) pve; urgency=medium
 
   * finally completely rename format::Entry to format::Stat, also Entry_V1 to
