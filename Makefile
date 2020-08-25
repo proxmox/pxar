@@ -9,8 +9,8 @@ check:
 dinstall: deb
 	sudo -k dpkg -i build/librust-*.deb
 
-.PHONY: deb
-deb:
+.PHONY: build
+build:
 	rm -rf build
 	mkdir build
 	debcargo package \
@@ -21,6 +21,12 @@ deb:
 	    "pxar" \
 	    "$$(dpkg-parsechangelog -l "debian/changelog" -SVersion | sed -e 's/-.*//')"
 	echo system >build/rust-toolchain
+	rm -f build/pxar/Cargo.lock
+	find build/pxar/debian -name '*.hint' -delete
+	cp build/pxar/debian/control debian/control
+
+.PHONY: deb
+deb: build
 	(cd build/pxar && CARGO=/usr/bin/cargo RUSTC=/usr/bin/rustc dpkg-buildpackage -b -uc -us)
 	lintian build/*.deb
 
