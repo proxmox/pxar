@@ -12,6 +12,7 @@ dinstall: deb
 .PHONY: build
 build:
 	rm -rf build
+	rm debian/control
 	mkdir build
 	debcargo package \
 	    --config "$(PWD)/debian/debcargo.toml" \
