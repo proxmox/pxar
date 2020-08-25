@@ -367,7 +367,7 @@ impl<I: SeqRead> DecoderImpl<I> {
                     ..Default::default()
                 };
             } else if header.htype == format::PXAR_ENTRY_V1 {
-                let stat: format::Entry_V1 = seq_read_entry(&mut self.input).await?;
+                let stat: format::Stat_V1 = seq_read_entry(&mut self.input).await?;
 
                 self.entry.metadata = Metadata {
                     stat: stat.into(),

@@ -149,7 +149,7 @@ impl Header {
             PXAR_ACL_DEFAULT => size_of::<acl::Default>() as u64,
             PXAR_ACL_GROUP_OBJ => size_of::<acl::GroupObject>() as u64,
             PXAR_QUOTA_PROJID => size_of::<QuotaProjectId>() as u64,
-            PXAR_ENTRY => size_of::<Entry>() as u64,
+            PXAR_ENTRY => size_of::<Stat>() as u64,
             PXAR_PAYLOAD | PXAR_GOODBYE => std::u64::MAX - (size_of::<Self>() as u64),
             _ => std::u64::MAX - (size_of::<Self>() as u64),
         }
@@ -227,6 +227,16 @@ impl StatxTimestamp {
     /// `const` version of `Default`
     pub const fn zero() -> Self {
         Self { secs: 0, nanos: 0 }
+    }
+
+    #[cfg(all(test, target_os = "linux"))]
+    /// From data found in `struct stat` (`libc::stat`).
+    pub fn from_stat(sec: i64, nsec: u32) -> Self {
+        if sec < 0 {
+            Self::from_duration_before_epoch(Duration::new((-sec) as u64, nsec))
+        } else {
+            Self::from_duration_since_epoch(Duration::new(sec as u64, nsec))
+        }
     }
 
     /// Turn a positive duration relative to the unix epoch into a time stamp.
@@ -314,7 +324,7 @@ fn test_statx_timestamp() {
 #[derive(Clone, Debug, Default, Endian)]
 #[cfg_attr(feature = "test-harness", derive(Eq, PartialEq))]
 #[repr(C)]
-pub struct Entry_V1 {
+pub struct Stat_V1 {
     pub mode: u64,
     pub flags: u64,
     pub uid: u32,
@@ -322,9 +332,9 @@ pub struct Entry_V1 {
     pub mtime: u64,
 }
 
-impl Into<Entry> for Entry_V1 {
-    fn into(self) -> Entry {
-        Entry {
+impl Into<Stat> for Stat_V1 {
+    fn into(self) -> Stat {
+        Stat {
             mode: self.mode,
             flags: self.flags,
             uid: self.uid,
@@ -337,7 +347,7 @@ impl Into<Entry> for Entry_V1 {
 #[derive(Clone, Debug, Default, Endian)]
 #[cfg_attr(feature = "test-harness", derive(Eq, PartialEq))]
 #[repr(C)]
-pub struct Entry {
+pub struct Stat {
     pub mode: u64,
     pub flags: u64,
     pub uid: u32,
@@ -346,7 +356,7 @@ pub struct Entry {
 }
 
 /// Builder pattern methods.
-impl Entry {
+impl Stat {
     pub const fn mode(self, mode: u64) -> Self {
         Self { mode, ..self }
     }
@@ -399,7 +409,7 @@ impl Entry {
 }
 
 /// Convenience accessor methods.
-impl Entry {
+impl Stat {
     /// Get the mtime as duration since the epoch.
     pub fn mtime_as_duration(&self) -> SignedDuration {
         self.mtime.to_duration()
@@ -417,7 +427,7 @@ impl Entry {
 }
 
 /// Convenience methods.
-impl Entry {
+impl Stat {
     /// Get the file type (`mode & mode::IFMT`).
     pub fn file_type(&self) -> u64 {
         self.mode & mode::IFMT
@@ -472,12 +482,12 @@ impl Entry {
     }
 }
 
-impl From<&std::fs::Metadata> for Entry {
-    fn from(meta: &std::fs::Metadata) -> Entry {
+impl From<&std::fs::Metadata> for Stat {
+    fn from(meta: &std::fs::Metadata) -> Stat {
         #[cfg(unix)]
         use std::os::unix::fs::MetadataExt;
 
-        let this = Entry::default();
+        let this = Stat::default();
 
         #[cfg(unix)]
         let this = this

@@ -40,14 +40,14 @@ const MAY_1_2015_1530: u64 = 1430487000u64;
 const FILE_NAME: &str = "file.txt";
 const FILE_NAME_BYTES: &[u8] = b"file.txt\0";
 const FILE_CONTENT: &[u8] = b"This is a small text file.\n";
-const ROOT_STAT: format::Entry_V1 = format::Entry_V1 {
+const ROOT_STAT: format::Stat_V1 = format::Stat_V1 {
     mode: format::mode::IFDIR | 0o755,
     flags: 0,
     uid: 1000,
     gid: 1000,
     mtime: MAY_1_2015_1530 * 1_000_000_000u64,
 };
-const FILE_STAT: format::Entry_V1 = format::Entry_V1 {
+const FILE_STAT: format::Stat_V1 = format::Stat_V1 {
     mode: format::mode::IFREG | 0o644,
     flags: 0,
     uid: 1000,

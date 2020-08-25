@@ -20,13 +20,8 @@ pub mod binary_tree_array;
 pub mod decoder;
 pub mod encoder;
 
-/// Reexport of `format::Entry`. Since this conveys mostly information found via the `stat` syscall
-/// we mostly use this name for public interfaces.
 #[doc(inline)]
-pub use format::Entry as Stat;
-
-#[doc(inline)]
-pub use format::mode;
+pub use format::{mode, Stat};
 
 /// File metadata found in pxar archives.
 ///
@@ -140,8 +135,14 @@ impl Metadata {
     }
 
     /// A more convenient way to create generic metadata.
-    pub fn builder(mode: u64) -> MetadataBuilder {
+    pub const fn builder(mode: u64) -> MetadataBuilder {
         MetadataBuilder::new(mode)
+    }
+
+    #[cfg(all(test, target_os = "linux"))]
+    /// A more convenient way to create metadata starting from `libc::stat`.
+    pub fn builder_from_stat(stat: &libc::stat) -> MetadataBuilder {
+        MetadataBuilder::new(0).fill_from_stat(stat)
     }
 }
 
@@ -183,6 +184,12 @@ impl MetadataBuilder {
 
     pub fn build(self) -> Metadata {
         self.inner
+    }
+
+    /// Set the file mode (complete `stat.st_mode` with file type and permission bits).
+    pub const fn st_mode(mut self, mode: u64) -> Self {
+        self.inner.stat.mode = mode;
+        self
     }
 
     /// Set the file type (`mode & mode::IFMT`).
@@ -276,6 +283,17 @@ impl MetadataBuilder {
     pub fn fcaps(mut self, fcaps: Option<Vec<u8>>) -> Self {
         self.inner.fcaps = fcaps.map(|data| format::FCaps { data });
         self
+    }
+
+    #[cfg(all(test, target_os = "linux"))]
+    /// Fill the metadata with information from `struct stat`.
+    pub fn fill_from_stat(self, stat: &libc::stat) -> Self {
+        self.st_mode(u64::from(stat.st_mode))
+            .owner(stat.st_uid, stat.st_gid)
+            .mtime_full(format::StatxTimestamp::from_stat(
+                stat.st_mtime,
+                stat.st_mtime_nsec as u32,
+            ))
     }
 }
 
