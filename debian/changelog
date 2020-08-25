@@ -1,3 +1,14 @@
+rust-pxar (0.5.0-1) pve; urgency=medium
+
+  * finally completely rename format::Entry to format::Stat, also Entry_V1 to
+    Stat_V1
+
+  * add Metadata::builder_from_stat
+
+  * add MetadataBuilder::fill_from_stat
+
+ -- Proxmox Support Team <support@proxmox.com>  Tue, 25 Aug 2020 12:25:32 +0200
+
 rust-pxar (0.4.0-1) pve; urgency=medium
 
   * remove poll_close and poll_position from SeqWrite trait
