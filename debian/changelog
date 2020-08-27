@@ -1,3 +1,12 @@
+rust-pxar (0.6.0-1) pve; urgency=medium
+
+  * let the encoder's finish() method return the inner writer
+
+  * add `into_writer()` encoder method to "cancel" a directory and get the
+    writer without finishing up the goodbye table
+
+ -- Proxmox Support Team <support@proxmox.com>  Thu, 27 Aug 2020 12:11:39 +0200
+
 rust-pxar (0.5.0-2) pve; urgency=medium
 
   * packaging fixup
