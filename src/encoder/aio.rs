@@ -128,8 +128,13 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
     }
 
     /// Finish this directory. This is mandatory, otherwise the `Drop` handler will `panic!`.
-    pub async fn finish(self) -> io::Result<()> {
+    pub async fn finish(self) -> io::Result<T> {
         self.inner.finish().await
+    }
+
+    /// Cancel this directory and get back the contained writer.
+    pub fn into_writer(self) -> T {
+        self.inner.into_writer()
     }
 
     /// Add a symbolic link to the archive.

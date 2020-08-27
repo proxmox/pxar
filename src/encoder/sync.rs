@@ -109,8 +109,13 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
     }
 
     /// Finish this directory. This is mandatory, otherwise the `Drop` handler will `panic!`.
-    pub fn finish(self) -> io::Result<()> {
+    pub fn finish(self) -> io::Result<T> {
         poll_result_once(self.inner.finish())
+    }
+
+    /// Cancel this directory and get back the contained writer.
+    pub fn into_writer(self) -> T {
+        self.inner.into_writer()
     }
 
     /// Add a symbolic link to the archive.

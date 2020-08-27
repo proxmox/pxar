@@ -243,7 +243,7 @@ impl EncoderState {
 /// We use `async fn` to implement the encoder state machine so that we can easily plug in both
 /// synchronous or `async` I/O objects in as output.
 pub(crate) struct EncoderImpl<'a, T: SeqWrite + 'a> {
-    output: T,
+    output: Option<T>,
     state: EncoderState,
     parent: Option<&'a mut EncoderState>,
     finished: bool,
@@ -274,7 +274,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
             io_bail!("directory metadata must contain the directory mode flag");
         }
         let mut this = Self {
-            output,
+            output: Some(output),
             state: EncoderState::default(),
             parent: None,
             finished: false,
@@ -325,14 +325,14 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         let header = format::Header::with_content_size(format::PXAR_PAYLOAD, file_size);
         header.check_header_size()?;
 
-        seq_write_struct(&mut self.output, header, &mut self.state.write_position).await?;
+        seq_write_struct(self.output.as_mut().unwrap(), header, &mut self.state.write_position).await?;
 
         let payload_data_offset = self.position();
 
         let meta_size = payload_data_offset - file_offset;
 
         Ok(FileImpl {
-            output: &mut self.output,
+            output: self.output.as_mut().unwrap(),
             goodbye_item: GoodbyeItem {
                 hash: format::hash_filename(file_name),
                 offset: file_offset,
@@ -474,7 +474,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         self.start_file_do(metadata, file_name).await?;
         if let Some((htype, entry_data)) = entry_htype_data {
             seq_write_pxar_entry(
-                &mut self.output,
+                self.output.as_mut().unwrap(),
                 htype,
                 entry_data,
                 &mut self.state.write_position,
@@ -527,7 +527,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         let write_position = self.position();
 
         Ok(EncoderImpl {
-            output: self.output.as_trait_object(),
+            output: self.output.as_mut().map(SeqWrite::as_trait_object),
             state: EncoderState {
                 entry_offset,
                 files_offset,
@@ -556,7 +556,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
 
     async fn encode_metadata(&mut self, metadata: &Metadata) -> io::Result<()> {
         seq_write_pxar_struct_entry(
-            &mut self.output,
+            self.output.as_mut().unwrap(),
             format::PXAR_ENTRY,
             metadata.stat.clone(),
             &mut self.state.write_position,
@@ -582,7 +582,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
 
     async fn write_xattr(&mut self, xattr: &format::XAttr) -> io::Result<()> {
         seq_write_pxar_entry(
-            &mut self.output,
+            self.output.as_mut().unwrap(),
             format::PXAR_XATTR,
             &xattr.data,
             &mut self.state.write_position,
@@ -593,7 +593,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
     async fn write_acls(&mut self, acl: &crate::Acl) -> io::Result<()> {
         for acl in &acl.users {
             seq_write_pxar_struct_entry(
-                &mut self.output,
+                self.output.as_mut().unwrap(),
                 format::PXAR_ACL_USER,
                 acl.clone(),
                 &mut self.state.write_position,
@@ -603,7 +603,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
 
         for acl in &acl.groups {
             seq_write_pxar_struct_entry(
-                &mut self.output,
+                self.output.as_mut().unwrap(),
                 format::PXAR_ACL_GROUP,
                 acl.clone(),
                 &mut self.state.write_position,
@@ -613,7 +613,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
 
         if let Some(acl) = &acl.group_obj {
             seq_write_pxar_struct_entry(
-                &mut self.output,
+                self.output.as_mut().unwrap(),
                 format::PXAR_ACL_GROUP_OBJ,
                 acl.clone(),
                 &mut self.state.write_position,
@@ -623,7 +623,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
 
         if let Some(acl) = &acl.default {
             seq_write_pxar_struct_entry(
-                &mut self.output,
+                self.output.as_mut().unwrap(),
                 format::PXAR_ACL_DEFAULT,
                 acl.clone(),
                 &mut self.state.write_position,
@@ -633,7 +633,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
 
         for acl in &acl.default_users {
             seq_write_pxar_struct_entry(
-                &mut self.output,
+                self.output.as_mut().unwrap(),
                 format::PXAR_ACL_DEFAULT_USER,
                 acl.clone(),
                 &mut self.state.write_position,
@@ -643,7 +643,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
 
         for acl in &acl.default_groups {
             seq_write_pxar_struct_entry(
-                &mut self.output,
+                self.output.as_mut().unwrap(),
                 format::PXAR_ACL_DEFAULT_GROUP,
                 acl.clone(),
                 &mut self.state.write_position,
@@ -656,7 +656,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
 
     async fn write_file_capabilities(&mut self, fcaps: &format::FCaps) -> io::Result<()> {
         seq_write_pxar_entry(
-            &mut self.output,
+            self.output.as_mut().unwrap(),
             format::PXAR_FCAPS,
             &fcaps.data,
             &mut self.state.write_position,
@@ -669,7 +669,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         quota_project_id: &format::QuotaProjectId,
     ) -> io::Result<()> {
         seq_write_pxar_struct_entry(
-            &mut self.output,
+            self.output.as_mut().unwrap(),
             format::PXAR_QUOTA_PROJID,
             *quota_project_id,
             &mut self.state.write_position,
@@ -680,7 +680,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
     async fn encode_filename(&mut self, file_name: &[u8]) -> io::Result<()> {
         crate::util::validate_filename(file_name)?;
         seq_write_pxar_entry_zero(
-            &mut self.output,
+            self.output.as_mut().unwrap(),
             format::PXAR_FILENAME,
             file_name,
             &mut self.state.write_position,
@@ -688,10 +688,10 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         .await
     }
 
-    pub async fn finish(mut self) -> io::Result<()> {
+    pub async fn finish(mut self) -> io::Result<T> {
         let tail_bytes = self.finish_goodbye_table().await?;
         seq_write_pxar_entry(
-            &mut self.output,
+            self.output.as_mut().unwrap(),
             format::PXAR_GOODBYE,
             &tail_bytes,
             &mut self.state.write_position,
@@ -716,7 +716,11 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
             });
         }
         self.finished = true;
-        Ok(())
+        Ok(self.output.take().unwrap())
+    }
+
+    pub fn into_writer(mut self) -> T {
+        self.output.take().unwrap()
     }
 
     async fn finish_goodbye_table(&mut self) -> io::Result<Vec<u8>> {
@@ -854,7 +858,7 @@ impl<'a> FileImpl<'a> {
         let put =
             poll_fn(|cx| unsafe { Pin::new_unchecked(&mut self.output).poll_seq_write(cx, data) })
                 .await?;
-        //let put = seq_write(&mut self.output, data).await?;
+        //let put = seq_write(self.output.as_mut().unwrap(), data).await?;
         self.remaining_size -= put as u64;
         self.parent.write_position += put as u64;
         Ok(put)
