@@ -1,2 +1,6 @@
 dependencies:
 - librust-anyhow-dev
+- librust-tokio-dev
+- librust-tokio+macros-dev
+- librust-tokio+io-driver-dev
+- librust-tokio+rt-threaded-dev
