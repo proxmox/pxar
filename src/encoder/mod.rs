@@ -325,7 +325,12 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         let header = format::Header::with_content_size(format::PXAR_PAYLOAD, file_size);
         header.check_header_size()?;
 
-        seq_write_struct(self.output.as_mut().unwrap(), header, &mut self.state.write_position).await?;
+        seq_write_struct(
+            self.output.as_mut().unwrap(),
+            header,
+            &mut self.state.write_position,
+        )
+        .await?;
 
         let payload_data_offset = self.position();
 
