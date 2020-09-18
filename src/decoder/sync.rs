@@ -28,6 +28,10 @@ impl<T: io::Read> Decoder<StandardReader<T>> {
     pub fn from_std(input: T) -> io::Result<Self> {
         Decoder::new(StandardReader::new(input))
     }
+
+    pub fn input(&mut self) -> &T {
+        self.inner.input().inner()
+    }
 }
 
 impl Decoder<StandardReader<std::fs::File>> {
@@ -94,6 +98,10 @@ pub struct StandardReader<T> {
 impl<T: io::Read> StandardReader<T> {
     pub fn new(inner: T) -> Self {
         Self { inner }
+    }
+
+    pub fn inner(&self) -> &T {
+        &self.inner
     }
 }
 

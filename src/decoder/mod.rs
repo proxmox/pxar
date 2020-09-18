@@ -194,6 +194,10 @@ impl<I: SeqRead> DecoderImpl<I> {
         Self::new_full(input, "/".into()).await
     }
 
+    pub(crate) fn input(&self) -> &I {
+        &self.input
+    }
+
     pub(crate) async fn new_full(input: I, path: PathBuf) -> io::Result<Self> {
         let this = DecoderImpl {
             input,
