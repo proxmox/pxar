@@ -1,3 +1,9 @@
+rust-pxar (0.6.1-1) unstable; urgency=medium
+
+  * Decoder<StandardReader<T>>: allow access to input
+
+ -- Proxmox Support Team <support@proxmox.com>  Fri, 18 Sep 2020 11:34:55 +0200
+
 rust-pxar (0.6.0-1) pve; urgency=medium
 
   * let the encoder's finish() method return the inner writer
