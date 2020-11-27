@@ -262,7 +262,7 @@ mod futures_writer {
             Self { inner: Some(inner) }
         }
 
-        fn inner_mut(self: &mut Self) -> io::Result<Pin<&mut T>> {
+        fn inner_mut(&mut self) -> io::Result<Pin<&mut T>> {
             let inner = self
                 .inner
                 .as_mut()
@@ -311,7 +311,7 @@ mod tokio_writer {
             Self { inner: Some(inner) }
         }
 
-        fn inner_mut(self: &mut Self) -> io::Result<Pin<&mut T>> {
+        fn inner_mut(&mut self) -> io::Result<Pin<&mut T>> {
             let inner = self
                 .inner
                 .as_mut()

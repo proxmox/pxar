@@ -349,6 +349,11 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
     }
 
     /// Return a file offset usable with `add_hardlink`.
+    // This is an `&mut self`, the Rc to the `file_copy_buffer` is handed down in
+    // `create_directory` which is also an `&mut self` method and returns an encoder holding a
+    // mutable borrow on `self`, opening a nested entry in the archive.
+    // So this should be fine.
+    #[allow(clippy::await_holding_refcell_ref)]
     pub async fn add_file(
         &mut self,
         metadata: &Metadata,

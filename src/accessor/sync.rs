@@ -81,7 +81,7 @@ impl<T: ReadAt> Accessor<T> {
     }
 
     /// Open a directory handle to the root of the pxar archive.
-    pub fn open_root_ref<'a>(&'a self) -> io::Result<Directory<&'a dyn ReadAt>> {
+    pub fn open_root_ref(&self) -> io::Result<Directory<&dyn ReadAt>> {
         Ok(Directory::new(poll_result_once(
             self.inner.open_root_ref(),
         )?))
