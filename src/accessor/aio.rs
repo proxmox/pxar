@@ -410,9 +410,10 @@ impl<T: Clone + ReadAt> tokio::io::AsyncRead for FileContents<T> {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context,
-        buf: &mut [u8],
-    ) -> Poll<io::Result<usize>> {
-        Self::do_poll_read(self, cx, buf)
+        buf: &mut tokio::io::ReadBuf,
+    ) -> Poll<io::Result<()>> {
+        Self::do_poll_read(self, cx, &mut buf.initialize_unfilled())
+            .map_ok(|bytes| { buf.set_filled(bytes); () })
     }
 }
 

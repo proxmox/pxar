@@ -136,61 +136,72 @@ mod stream {
 #[cfg(feature = "futures-io")]
 pub use stream::DecoderStream;
 
-macro_rules! async_io_impl {
-    (
-        #[cfg( $($attr:tt)+ )]
-        mod $mod:ident {
-            $(#[$docs:meta])*
-            $name:ident : $trait:path ;
+#[cfg(feature = "futures-io")]
+mod fut {
+    use std::io;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+
+    /// Read adapter for `futures::io::AsyncRead`
+    pub struct FuturesReader<T> {
+        inner: T,
+    }
+
+    impl<T: futures::io::AsyncRead> FuturesReader<T> {
+        pub fn new(inner: T) -> Self {
+            Self { inner }
         }
-    ) => {
-        #[cfg( $($attr)+ )]
-        mod $mod {
-            use std::io;
-            use std::pin::Pin;
-            use std::task::{Context, Poll};
+    }
 
-            $(#[$docs])*
-            pub struct $name<T> {
-                inner: T,
-            }
-
-            impl<T: $trait> $name<T> {
-                pub fn new(inner: T) -> Self {
-                    Self { inner }
-                }
-            }
-
-            impl<T: $trait> crate::decoder::SeqRead for $name<T> {
-                fn poll_seq_read(
-                    self: Pin<&mut Self>,
-                    cx: &mut Context,
-                    buf: &mut [u8],
-                ) -> Poll<io::Result<usize>> {
-                    unsafe {
-                        self.map_unchecked_mut(|this| &mut this.inner)
-                            .poll_read(cx, buf)
-                    }
-                }
+    impl<T: futures::io::AsyncRead> crate::decoder::SeqRead for FuturesReader<T> {
+        fn poll_seq_read(
+            self: Pin<&mut Self>,
+            cx: &mut Context,
+            buf: &mut [u8],
+        ) -> Poll<io::Result<usize>> {
+            unsafe {
+                self.map_unchecked_mut(|this| &mut this.inner)
+                    .poll_read(cx, buf)
             }
         }
-        #[cfg( $($attr)+ )]
-        pub use $mod::$name;
     }
 }
 
-async_io_impl! {
-    #[cfg(feature = "futures-io")]
-    mod fut {
-        /// Read adapter for `futures::io::AsyncRead`.
-        FuturesReader : futures::io::AsyncRead;
+#[cfg(feature = "futures-io")]
+use fut::FuturesReader;
+
+#[cfg(feature = "tokio-io")]
+mod tok {
+    use std::io;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+
+    /// Read adapter for `futures::io::AsyncRead`
+    pub struct TokioReader<T> {
+        inner: T,
+    }
+
+    impl<T: tokio::io::AsyncRead> TokioReader<T> {
+        pub fn new(inner: T) -> Self {
+            Self { inner }
+        }
+    }
+
+    impl<T: tokio::io::AsyncRead> crate::decoder::SeqRead for TokioReader<T> {
+        fn poll_seq_read(
+            self: Pin<&mut Self>,
+            cx: &mut Context,
+            buf: &mut [u8],
+        ) -> Poll<io::Result<usize>> {
+            let mut read_buf = tokio::io::ReadBuf::new(buf);
+            unsafe {
+                self.map_unchecked_mut(|this| &mut this.inner)
+                    .poll_read(cx, &mut read_buf)
+                    .map_ok(|_| read_buf.filled().len())
+            }
+        }
     }
 }
 
-async_io_impl! {
-    #[cfg(feature = "tokio-io")]
-    mod tok {
-        /// Read adapter for `tokio::io::AsyncRead`.
-        TokioReader : tokio::io::AsyncRead;
-    }
-}
+#[cfg(feature = "tokio-io")]
+use tok::TokioReader;
