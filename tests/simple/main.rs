@@ -42,6 +42,9 @@ fn test1() {
 
     assert!(!file.is_empty(), "encoder did not write any data");
 
+    // may be useful for testing...
+    // std::fs::write("myarchive.pxar", &file).expect("failed to write out test archive");
+
     let mut input = &file[..];
     let mut decoder = decoder::Decoder::from_std(&mut input).expect("failed to create decoder");
     let decoded_fs =
@@ -53,6 +56,7 @@ fn test1() {
         .expect("failed to create random access reader for encoded archive");
 
     check_bunzip2(&accessor);
+    check_run_special_files(&accessor);
 }
 
 fn check_bunzip2(accessor: &accessor::Accessor<&[u8]>) {
@@ -84,4 +88,46 @@ fn check_bunzip2(accessor: &accessor::Accessor<&[u8]>) {
     }
 
     assert_eq!(content, "This is the bzip2 executable");
+}
+
+fn check_run_special_files(accessor: &accessor::Accessor<&[u8]>) {
+    let rundir = accessor
+        .open_root()
+        .expect("failed to open root of encoded archive")
+        .lookup("run")
+        .expect("failed to open /run in encoded archive")
+        .expect("missing /run in encoded archive")
+        .enter_directory()
+        .expect("expected /run to be a directory in the test archive");
+
+    assert_eq!(rundir.entry_count(), 2, "expected 2 entries in /run");
+
+    let mut rd = rundir.read_dir();
+    let fifo0 = rd
+        .next()
+        .expect("expected 'fifo0' entry in rundir")
+        .expect("failed to get first (fifo0) entry in test archive /run directory");
+    assert_eq!(
+        fifo0.file_name(),
+        Path::new("fifo0"),
+        "expected first file in /run to be fifo0"
+    );
+
+    let _entry = fifo0
+        .decode_entry()
+        .expect("failed to decode entry for fifo0");
+
+    let sock0 = rd
+        .next()
+        .expect("expected 'sock0' entry in rundir")
+        .expect("failed to get second (sock0) entry in test archive /run directory");
+    assert_eq!(
+        sock0.file_name(),
+        Path::new("sock0"),
+        "expected second file in /run to be sock0"
+    );
+
+    let _entry = sock0
+        .decode_entry()
+        .expect("failed to decode entry for sock0");
 }

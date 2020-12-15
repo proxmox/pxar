@@ -155,6 +155,10 @@ pub(crate) struct DecoderImpl<T> {
     path_lengths: Vec<usize>,
     state: State,
     with_goodbye_tables: bool,
+
+    /// The random access code uses decoders for sub-ranges which may not end in a `PAYLOAD` for
+    /// entries like FIFOs or sockets, so there we explicitly allow an item to terminate with EOF.
+    eof_after_entry: bool,
 }
 
 enum State {
@@ -191,14 +195,18 @@ pub(crate) enum ItemResult {
 
 impl<I: SeqRead> DecoderImpl<I> {
     pub async fn new(input: I) -> io::Result<Self> {
-        Self::new_full(input, "/".into()).await
+        Self::new_full(input, "/".into(), false).await
     }
 
     pub(crate) fn input(&self) -> &I {
         &self.input
     }
 
-    pub(crate) async fn new_full(input: I, path: PathBuf) -> io::Result<Self> {
+    pub(crate) async fn new_full(
+        input: I,
+        path: PathBuf,
+        eof_after_entry: bool,
+    ) -> io::Result<Self> {
         let this = DecoderImpl {
             input,
             current_header: unsafe { mem::zeroed() },
@@ -210,6 +218,7 @@ impl<I: SeqRead> DecoderImpl<I> {
             path_lengths: Vec::new(),
             state: State::Begin,
             with_goodbye_tables: false,
+            eof_after_entry,
         };
 
         // this.read_next_entry().await?;
@@ -383,7 +392,14 @@ impl<I: SeqRead> DecoderImpl<I> {
 
             self.current_header = unsafe { mem::zeroed() };
 
-            while self.read_next_item().await? != ItemResult::Entry {}
+            loop {
+                match self.read_next_item_or_eof().await? {
+                    Some(ItemResult::Entry) => break,
+                    Some(ItemResult::Attribute) => continue,
+                    None if self.eof_after_entry => break,
+                    None => io_bail!("unexpected EOF in entry"),
+                }
+            }
 
             if self.entry.is_dir() {
                 self.path_lengths
@@ -402,24 +418,40 @@ impl<I: SeqRead> DecoderImpl<I> {
             .ok_or_else(|| io_format_err!("unexpected EOF"))
     }
 
-    // NOTE: This behavior method is also recreated in the accessor's `get_decoder_at_filename`
-    // function! Keep in mind when changing!
     async fn read_next_item(&mut self) -> io::Result<ItemResult> {
-        self.read_next_header().await?;
-        self.read_current_item().await
+        match self.read_next_item_or_eof().await? {
+            Some(item) => Ok(item),
+            None => io_bail!("unexpected EOF"),
+        }
     }
 
-    async fn read_next_header(&mut self) -> io::Result<()> {
+    // NOTE: The random accessor will decode FIFOs and Sockets in a decoder instance with a ranged
+    // reader so there is no PAYLOAD or GOODBYE TABLE to "end" an entry.
+    //
+    // NOTE: This behavior method is also recreated in the accessor's `get_decoder_at_filename`
+    // function! Keep in mind when changing!
+    async fn read_next_item_or_eof(&mut self) -> io::Result<Option<ItemResult>> {
+        match self.read_next_header_or_eof().await? {
+            Some(()) => self.read_current_item().await.map(Some),
+            None => Ok(None),
+        }
+    }
+
+    async fn read_next_header_or_eof(&mut self) -> io::Result<Option<()>> {
         let dest = unsafe {
             std::slice::from_raw_parts_mut(
                 &mut self.current_header as *mut Header as *mut u8,
                 size_of_val(&self.current_header),
             )
         };
-        seq_read_exact(&mut self.input, dest).await?;
-        self.current_header.check_header_size()?;
 
-        Ok(())
+        match seq_read_exact_or_eof(&mut self.input, dest).await? {
+            Some(()) => {
+                self.current_header.check_header_size()?;
+                Ok(Some(()))
+            }
+            None => Ok(None),
+        }
     }
 
     /// Read the next item, the header is already loaded.
