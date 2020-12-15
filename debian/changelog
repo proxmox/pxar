@@ -1,3 +1,10 @@
+rust-pxar (0.6.2-1) unstable; urgency=medium
+
+  * fix error trying decode "special files" (fifos, sockets) using the random
+    access decoder
+
+ -- Proxmox Support Team <support@proxmox.com>  Tue, 15 Dec 2020 13:08:34 +0100
+
 rust-pxar (0.6.1-1) unstable; urgency=medium
 
   * Decoder<StandardReader<T>>: allow access to input
