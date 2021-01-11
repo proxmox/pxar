@@ -453,42 +453,27 @@ impl Entry {
 impl Entry {
     /// Check whether this is a directory.
     pub fn is_dir(&self) -> bool {
-        match self.kind {
-            EntryKind::Directory { .. } => true,
-            _ => false,
-        }
+        matches!(self.kind, EntryKind::Directory)
     }
 
     /// Check whether this is a symbolic link.
     pub fn is_symlink(&self) -> bool {
-        match self.kind {
-            EntryKind::Symlink(_) => true,
-            _ => false,
-        }
+        matches!(self.kind, EntryKind::Symlink(_))
     }
 
     /// Check whether this is a hard link.
     pub fn is_hardlink(&self) -> bool {
-        match self.kind {
-            EntryKind::Hardlink(_) => true,
-            _ => false,
-        }
+        matches!(self.kind, EntryKind::Hardlink(_))
     }
 
     /// Check whether this is a device node.
     pub fn is_device(&self) -> bool {
-        match self.kind {
-            EntryKind::Device(_) => true,
-            _ => false,
-        }
+        matches!(self.kind, EntryKind::Device(_))
     }
 
     /// Check whether this is a regular file.
     pub fn is_regular_file(&self) -> bool {
-        match self.kind {
-            EntryKind::File { .. } => true,
-            _ => false,
-        }
+        matches!(self.kind, EntryKind::File { .. })
     }
 
     /// Get the file size if this is a regular file, or `None`.

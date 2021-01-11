@@ -55,8 +55,7 @@ mod consts {
 }
 
 pub fn is_virtual_file_system(magic: i64) -> bool {
-    match magic {
-        consts::BINFMTFS_MAGIC
+    matches!(magic, consts::BINFMTFS_MAGIC
         | consts::CGROUP2_SUPER_MAGIC
         | consts::CGROUP_SUPER_MAGIC
         | consts::CONFIGFS_MAGIC
@@ -73,9 +72,7 @@ pub fn is_virtual_file_system(magic: i64) -> bool {
         | consts::SECURITYFS_MAGIC
         | consts::SELINUX_MAGIC
         | consts::SMACK_MAGIC
-        | consts::SYSFS_MAGIC => true,
-        _ => false,
-    }
+        | consts::SYSFS_MAGIC)
 }
 
 /// Helper function to extract file names from binary archive.
