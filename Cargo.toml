@@ -53,16 +53,14 @@ tokio = { version = "1.0", optional = true, default-features = false }
 libc = "0.2"
 
 [features]
-default = [ "futures-io", "tokio-io" ]
-futures-io = [ "futures" ]
+default = [ "tokio-io" ]
 tokio-io = [ "tokio" ]
 tokio-fs = [ "tokio-io", "tokio/fs" ]
 
-full = [ "tokio-fs", "futures-io" ]
+full = [ "tokio-fs"]
 
 async-example = [
     "anyhow",
-    "futures-io",
     "tokio-io",
     "tokio-fs",
     "tokio/rt-multi-thread",

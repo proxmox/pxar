@@ -818,7 +818,7 @@ impl<'a> FileImpl<'a> {
     }
 
     /// Poll write interface to more easily connect to tokio/futures.
-    #[cfg(any(feature = "tokio-io", feature = "futures-io"))]
+    #[cfg(feature = "tokio-io")]
     pub fn poll_write(
         self: Pin<&mut Self>,
         cx: &mut Context,
@@ -838,7 +838,7 @@ impl<'a> FileImpl<'a> {
     }
 
     /// Poll flush interface to more easily connect to tokio/futures.
-    #[cfg(any(feature = "tokio-io", feature = "futures-io"))]
+    #[cfg(feature = "tokio-io")]
     pub fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
         unsafe {
             self.map_unchecked_mut(|this| &mut this.output)
@@ -850,7 +850,7 @@ impl<'a> FileImpl<'a> {
     ///
     /// This just calls flush, though, since we're just a virtual writer writing to the file
     /// provided by our encoder.
-    #[cfg(any(feature = "tokio-io", feature = "futures-io"))]
+    #[cfg(feature = "tokio-io")]
     pub fn poll_close(self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
         unsafe {
             self.map_unchecked_mut(|this| &mut this.output)
@@ -894,21 +894,6 @@ impl<'a> tokio::io::AsyncWrite for FileImpl<'a> {
     }
 
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
-        FileImpl::poll_close(self, cx)
-    }
-}
-
-#[cfg(feature = "futures-io")]
-impl<'a> futures::io::AsyncWrite for FileImpl<'a> {
-    fn poll_write(self: Pin<&mut Self>, cx: &mut Context, buf: &[u8]) -> Poll<io::Result<usize>> {
-        FileImpl::poll_write(self, cx, buf)
-    }
-
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
-        FileImpl::poll_flush(self, cx)
-    }
-
-    fn poll_close(self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
         FileImpl::poll_close(self, cx)
     }
 }

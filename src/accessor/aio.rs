@@ -348,20 +348,19 @@ pub struct FileContents<T> {
 unsafe impl<T: Send> Send for FileContents<T> {}
 unsafe impl<T: Sync> Sync for FileContents<T> {}
 
-#[cfg(any(feature = "futures-io", feature = "tokio-io"))]
-impl<T: Clone + ReadAt> FileContents<T> {
-    /// Similar implementation exists for SeqReadAtAdapter in mod.rs
-    fn do_poll_read(
+#[cfg(feature = "tokio-io")]
+impl<T: Clone + ReadAt> tokio::io::AsyncRead for FileContents<T> {
+    fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context,
-        dest: &mut [u8],
-    ) -> Poll<io::Result<usize>> {
+        dest: &mut tokio::io::ReadBuf,
+    ) -> Poll<io::Result<()>> {
         let this = unsafe { Pin::into_inner_unchecked(self) };
         loop {
             match this.future.take() {
                 None => {
                     let mut buffer = mem::take(&mut this.buffer);
-                    util::scale_read_buffer(&mut buffer, dest.len());
+                    util::scale_read_buffer(&mut buffer, dest.remaining());
                     let reader: accessor::FileContentsImpl<T> = this.inner.clone();
                     let at = this.at;
                     let future: Pin<Box<dyn Future<Output = io::Result<ReadResult>>>> =
@@ -384,36 +383,13 @@ impl<T: Clone + ReadAt> FileContents<T> {
                     Poll::Ready(Ok(ReadResult { len: got, buffer })) => {
                         this.buffer = buffer;
                         this.at += got as u64;
-                        let len = got.min(dest.len());
-                        dest[..len].copy_from_slice(&this.buffer[..len]);
-                        return Poll::Ready(Ok(len));
+                        let len = got.min(dest.remaining());
+                        dest.put_slice(&this.buffer[..len]);
+                        return Poll::Ready(Ok(()));
                     }
                 },
             }
         }
-    }
-}
-
-#[cfg(feature = "futures-io")]
-impl<T: Clone + ReadAt> futures::io::AsyncRead for FileContents<T> {
-    fn poll_read(
-        self: Pin<&mut Self>,
-        cx: &mut Context,
-        buf: &mut [u8],
-    ) -> Poll<io::Result<usize>> {
-        Self::do_poll_read(self, cx, buf)
-    }
-}
-
-#[cfg(feature = "tokio-io")]
-impl<T: Clone + ReadAt> tokio::io::AsyncRead for FileContents<T> {
-    fn poll_read(
-        self: Pin<&mut Self>,
-        cx: &mut Context,
-        buf: &mut tokio::io::ReadBuf,
-    ) -> Poll<io::Result<()>> {
-        Self::do_poll_read(self, cx, &mut buf.initialize_unfilled())
-            .map_ok(|bytes| { buf.set_filled(bytes); () })
     }
 }
 

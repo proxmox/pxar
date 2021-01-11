@@ -16,15 +16,6 @@ pub struct Decoder<T> {
     inner: decoder::DecoderImpl<T>,
 }
 
-#[cfg(feature = "futures-io")]
-impl<T: futures::io::AsyncRead> Decoder<FuturesReader<T>> {
-    /// Decode a `pxar` archive from a `futures::io::AsyncRead` input.
-    #[inline]
-    pub async fn from_futures(input: T) -> io::Result<Self> {
-        Decoder::new(FuturesReader::new(input)).await
-    }
-}
-
 #[cfg(feature = "tokio-io")]
 impl<T: tokio::io::AsyncRead> Decoder<TokioReader<T>> {
     /// Decode a `pxar` archive from a `tokio::io::AsyncRead` input.
@@ -69,106 +60,7 @@ impl<T: SeqRead> Decoder<T> {
     pub fn enable_goodbye_entries(&mut self, on: bool) {
         self.inner.with_goodbye_tables = on;
     }
-
-    /// Turn this decoder into a `Stream`.
-    #[cfg(feature = "futures-io")]
-    pub fn into_stream(self) -> DecoderStream<T> {
-        DecoderStream::new(self)
-    }
 }
-
-#[cfg(feature = "futures-io")]
-mod stream {
-    use std::future::Future;
-    use std::io;
-    use std::pin::Pin;
-    use std::task::{Context, Poll};
-
-    use super::{Entry, SeqRead};
-
-    /// A wrapper for the async decoder implementing `futures::stream::Stream`.
-    ///
-    /// As long as streams are poll-based this wrapper is required to turn `async fn next()` into
-    /// `Stream`'s `poll_next()` interface.
-    #[allow(clippy::type_complexity)] // yeah no
-    pub struct DecoderStream<T> {
-        inner: super::Decoder<T>,
-        future: Option<Pin<Box<dyn Future<Output = Option<io::Result<Entry>>>>>>,
-    }
-
-    impl<T> DecoderStream<T> {
-        pub fn new(inner: super::Decoder<T>) -> Self {
-            Self {
-                inner,
-                future: None,
-            }
-        }
-    }
-
-    impl<T: SeqRead> futures::stream::Stream for DecoderStream<T> {
-        type Item = io::Result<Entry>;
-
-        fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-            let this = unsafe { self.get_unchecked_mut() };
-            loop {
-                if let Some(mut fut) = this.future.take() {
-                    match fut.as_mut().poll(cx) {
-                        Poll::Ready(res) => return Poll::Ready(res),
-                        Poll::Pending => {
-                            this.future = Some(fut);
-                            return Poll::Pending;
-                        }
-                    }
-                }
-                unsafe {
-                    let fut: Box<dyn Future<Output = _>> = Box::new(this.inner.next());
-                    // Discard the lifetime:
-                    let fut: *mut (dyn Future<Output = Option<io::Result<Entry>>> + 'static) =
-                        core::mem::transmute(Box::into_raw(fut));
-                    let fut = Box::from_raw(fut);
-                    this.future = Some(Pin::new_unchecked(fut));
-                }
-            }
-        }
-    }
-}
-
-#[cfg(feature = "futures-io")]
-pub use stream::DecoderStream;
-
-#[cfg(feature = "futures-io")]
-mod fut {
-    use std::io;
-    use std::pin::Pin;
-    use std::task::{Context, Poll};
-
-    /// Read adapter for `futures::io::AsyncRead`
-    pub struct FuturesReader<T> {
-        inner: T,
-    }
-
-    impl<T: futures::io::AsyncRead> FuturesReader<T> {
-        pub fn new(inner: T) -> Self {
-            Self { inner }
-        }
-    }
-
-    impl<T: futures::io::AsyncRead> crate::decoder::SeqRead for FuturesReader<T> {
-        fn poll_seq_read(
-            self: Pin<&mut Self>,
-            cx: &mut Context,
-            buf: &mut [u8],
-        ) -> Poll<io::Result<usize>> {
-            unsafe {
-                self.map_unchecked_mut(|this| &mut this.inner)
-                    .poll_read(cx, buf)
-            }
-        }
-    }
-}
-
-#[cfg(feature = "futures-io")]
-use fut::FuturesReader;
 
 #[cfg(feature = "tokio-io")]
 mod tok {

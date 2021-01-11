@@ -9,29 +9,12 @@ use crate::encoder::{self, LinkOffset, SeqWrite};
 use crate::format;
 use crate::Metadata;
 
-// #[cfg(feature = "futures-io")]
-// use crate::decoder::aio::FuturesReader;
-// #[cfg(feature = "tokio-io")]
-// use crate::decoder::aio::TokioReader;
-
 /// Asynchronous `pxar` encoder.
 ///
 /// This is the `async` version of the `pxar` encoder.
 #[repr(transparent)]
 pub struct Encoder<'a, T: SeqWrite + 'a> {
     inner: encoder::EncoderImpl<'a, T>,
-}
-
-#[cfg(feature = "futures-io")]
-impl<'a, T: futures::io::AsyncWrite + 'a> Encoder<'a, FuturesWriter<T>> {
-    /// Encode a `pxar` archive into a `futures::io::AsyncWrite` output.
-    #[inline]
-    pub async fn from_futures(
-        output: T,
-        metadata: &Metadata,
-    ) -> io::Result<Encoder<'a, FuturesWriter<T>>> {
-        Encoder::new(FuturesWriter::new(output), metadata).await
-    }
 }
 
 #[cfg(feature = "tokio-io")]
@@ -214,21 +197,6 @@ impl<'a> File<'a> {
     }
 }
 
-#[cfg(feature = "futures-io")]
-impl<'a> futures::io::AsyncWrite for File<'a> {
-    fn poll_write(self: Pin<&mut Self>, cx: &mut Context, data: &[u8]) -> Poll<io::Result<usize>> {
-        unsafe { self.map_unchecked_mut(|this| &mut this.inner) }.poll_write(cx, data)
-    }
-
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
-        unsafe { self.map_unchecked_mut(|this| &mut this.inner) }.poll_flush(cx)
-    }
-
-    fn poll_close(self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
-        unsafe { self.map_unchecked_mut(|this| &mut this.inner) }.poll_close(cx)
-    }
-}
-
 #[cfg(feature = "tokio-io")]
 impl<'a> tokio::io::AsyncWrite for File<'a> {
     fn poll_write(self: Pin<&mut Self>, cx: &mut Context, data: &[u8]) -> Poll<io::Result<usize>> {
@@ -243,55 +211,6 @@ impl<'a> tokio::io::AsyncWrite for File<'a> {
         unsafe { self.map_unchecked_mut(|this| &mut this.inner) }.poll_close(cx)
     }
 }
-
-/// Pxar encoder write adapter for `futures::io::AsyncWrite`.
-#[cfg(feature = "futures-io")]
-mod futures_writer {
-    use std::io;
-    use std::pin::Pin;
-    use std::task::{Context, Poll};
-
-    use crate::encoder::SeqWrite;
-
-    pub struct FuturesWriter<T> {
-        inner: Option<T>,
-    }
-
-    impl<T: futures::io::AsyncWrite> FuturesWriter<T> {
-        pub fn new(inner: T) -> Self {
-            Self { inner: Some(inner) }
-        }
-
-        fn inner_mut(&mut self) -> io::Result<Pin<&mut T>> {
-            let inner = self
-                .inner
-                .as_mut()
-                .ok_or_else(|| io_format_err!("write after close"))?;
-            Ok(unsafe { Pin::new_unchecked(inner) })
-        }
-
-        fn inner(self: Pin<&mut Self>) -> io::Result<Pin<&mut T>> {
-            unsafe { self.get_unchecked_mut() }.inner_mut()
-        }
-    }
-
-    impl<T: futures::io::AsyncWrite> SeqWrite for FuturesWriter<T> {
-        fn poll_seq_write(
-            self: Pin<&mut Self>,
-            cx: &mut Context,
-            buf: &[u8],
-        ) -> Poll<io::Result<usize>> {
-            let this = unsafe { self.get_unchecked_mut() };
-            this.inner_mut()?.poll_write(cx, buf)
-        }
-
-        fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
-            self.inner()?.poll_flush(cx)
-        }
-    }
-}
-
-pub use futures_writer::FuturesWriter;
 
 /// Pxar encoder write adapter for `tokio::io::AsyncWrite`.
 #[cfg(feature = "tokio-io")]
