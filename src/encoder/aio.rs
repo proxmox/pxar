@@ -259,4 +259,5 @@ mod tokio_writer {
     }
 }
 
+#[cfg(feature = "tokio-io")]
 pub use tokio_writer::TokioWriter;
