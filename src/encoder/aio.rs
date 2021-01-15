@@ -21,7 +21,7 @@ pub struct Encoder<'a, T: SeqWrite + 'a> {
 impl<'a, T: tokio::io::AsyncWrite + 'a> Encoder<'a, TokioWriter<T>> {
     /// Encode a `pxar` archive into a `tokio::io::AsyncWrite` output.
     #[inline]
-    pub async fn from_futures(
+    pub async fn from_tokio(
         output: T,
         metadata: &Metadata,
     ) -> io::Result<Encoder<'a, TokioWriter<T>>> {
