@@ -6,12 +6,17 @@ Build-Depends: debhelper (>= 11),
  cargo:native <!nocheck>,
  rustc:native <!nocheck>,
  libstd-rust-dev <!nocheck>,
+ librust-anyhow-dev <!nocheck>,
  librust-bitflags-1+default-dev (>= 1.2.1-~~) <!nocheck>,
  librust-endian-trait-0.6+arrays-dev <!nocheck>,
  librust-endian-trait-0.6+default-dev <!nocheck>,
+ librust-futures-dev <!nocheck>,
  librust-libc-0.2+default-dev <!nocheck>,
  librust-siphasher-0.3+default-dev <!nocheck>,
- librust-tokio-1-dev <!nocheck>
+ librust-tokio+macros-dev <!nocheck>,
+ librust-tokio+rt-multi-thread-dev <!nocheck>,
+ librust-tokio-1-dev <!nocheck>,
+ librust-tokio-dev <!nocheck>,
 Maintainer: Proxmox Support Team <support@proxmox.com>
 Standards-Version: 4.4.1
 Vcs-Git: 
