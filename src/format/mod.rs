@@ -332,14 +332,14 @@ pub struct Stat_V1 {
     pub mtime: u64,
 }
 
-impl Into<Stat> for Stat_V1 {
-    fn into(self) -> Stat {
+impl From<Stat_V1> for Stat {
+    fn from(v1: Stat_V1) -> Stat {
         Stat {
-            mode: self.mode,
-            flags: self.flags,
-            uid: self.uid,
-            gid: self.gid,
-            mtime: StatxTimestamp::from_duration_since_epoch(Duration::from_nanos(self.mtime)),
+            mode: v1.mode,
+            flags: v1.flags,
+            uid: v1.uid,
+            gid: v1.gid,
+            mtime: StatxTimestamp::from_duration_since_epoch(Duration::from_nanos(v1.mtime)),
         }
     }
 }
