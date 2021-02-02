@@ -261,3 +261,23 @@ mod tokio_writer {
 
 #[cfg(feature = "tokio-io")]
 pub use tokio_writer::TokioWriter;
+
+#[test]
+/// Assert that `Encoder` is `Send`
+fn send_test() {
+    let test = async {
+        let mut encoder = Encoder::from_tokio(
+            tokio::fs::File::create("foo").await.unwrap(),
+            &Metadata::dir_builder(0o700).build(),
+        )
+        .await
+        .unwrap();
+        encoder
+            .create_directory("baba", &Metadata::dir_builder(0o700).build())
+            .await
+            .unwrap();
+    };
+
+    fn test_send<T: Send>(_: T) {}
+    test_send(test);
+}
