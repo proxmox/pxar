@@ -262,22 +262,48 @@ mod tokio_writer {
 #[cfg(feature = "tokio-io")]
 pub use tokio_writer::TokioWriter;
 
-#[test]
-/// Assert that `Encoder` is `Send`
-fn send_test() {
-    let test = async {
-        let mut encoder = Encoder::from_tokio(
-            tokio::fs::File::create("foo").await.unwrap(),
-            &Metadata::dir_builder(0o700).build(),
-        )
-        .await
-        .unwrap();
-        encoder
-            .create_directory("baba", &Metadata::dir_builder(0o700).build())
+#[cfg(test)]
+mod test {
+    use std::io;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+
+    use super::Encoder;
+    use crate::Metadata;
+
+    struct DummyOutput;
+
+    impl super::SeqWrite for DummyOutput {
+        fn poll_seq_write(
+            self: Pin<&mut Self>,
+            _cx: &mut Context,
+            _buf: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            unreachable!();
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<io::Result<()>> {
+            unreachable!();
+        }
+    }
+
+    #[test]
+    /// Assert that `Encoder` is `Send`
+    fn send_test() {
+        let test = async {
+            let mut encoder = Encoder::new(
+                DummyOutput,
+                &Metadata::dir_builder(0o700).build(),
+            )
             .await
             .unwrap();
-    };
-
-    fn test_send<T: Send>(_: T) {}
-    test_send(test);
+            encoder
+                .create_directory("baba", &Metadata::dir_builder(0o700).build())
+                .await
+                .unwrap();
+        };
+    
+        fn test_send<T: Send>(_: T) {}
+        test_send(test);
+    }
 }
