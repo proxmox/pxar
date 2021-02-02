@@ -122,12 +122,7 @@ where
     let data = data.to_le();
     let buf =
         unsafe { std::slice::from_raw_parts(&data as *const E as *const u8, size_of_val(&data)) };
-    seq_write_all(
-        output,
-        buf,
-        position,
-    )
-    .await
+    seq_write_all(output, buf, position).await
 }
 
 /// Write a pxar entry.
@@ -180,13 +175,7 @@ where
     let data = data.to_le();
     let buf =
         unsafe { std::slice::from_raw_parts(&data as *const E as *const u8, size_of_val(&data)) };
-    seq_write_pxar_entry(
-        output,
-        htype,
-        buf,
-        position,
-    )
-    .await
+    seq_write_pxar_entry(output, htype, buf, position).await
 }
 
 /// Error conditions caused by wrong usage of this crate.

@@ -55,24 +55,27 @@ mod consts {
 }
 
 pub fn is_virtual_file_system(magic: i64) -> bool {
-    matches!(magic, consts::BINFMTFS_MAGIC
-        | consts::CGROUP2_SUPER_MAGIC
-        | consts::CGROUP_SUPER_MAGIC
-        | consts::CONFIGFS_MAGIC
-        | consts::DEBUGFS_MAGIC
-        | consts::DEVPTS_SUPER_MAGIC
-        | consts::EFIVARFS_MAGIC
-        | consts::FUSE_CTL_SUPER_MAGIC
-        | consts::HUGETLBFS_MAGIC
-        | consts::MQUEUE_MAGIC
-        | consts::NFSD_MAGIC
-        | consts::PROC_SUPER_MAGIC
-        | consts::PSTOREFS_MAGIC
-        | consts::RPCAUTH_GSSMAGIC
-        | consts::SECURITYFS_MAGIC
-        | consts::SELINUX_MAGIC
-        | consts::SMACK_MAGIC
-        | consts::SYSFS_MAGIC)
+    matches!(
+        magic,
+        consts::BINFMTFS_MAGIC
+            | consts::CGROUP2_SUPER_MAGIC
+            | consts::CGROUP_SUPER_MAGIC
+            | consts::CONFIGFS_MAGIC
+            | consts::DEBUGFS_MAGIC
+            | consts::DEVPTS_SUPER_MAGIC
+            | consts::EFIVARFS_MAGIC
+            | consts::FUSE_CTL_SUPER_MAGIC
+            | consts::HUGETLBFS_MAGIC
+            | consts::MQUEUE_MAGIC
+            | consts::NFSD_MAGIC
+            | consts::PROC_SUPER_MAGIC
+            | consts::PSTOREFS_MAGIC
+            | consts::RPCAUTH_GSSMAGIC
+            | consts::SECURITYFS_MAGIC
+            | consts::SELINUX_MAGIC
+            | consts::SMACK_MAGIC
+            | consts::SYSFS_MAGIC
+    )
 }
 
 /// Helper function to extract file names from binary archive.
