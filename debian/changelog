@@ -1,3 +1,11 @@
+rust-pxar (0.8.0-1) unstable; urgency=medium
+
+  * fix method naming: `from_futures` -> `from_tokio`
+
+  * ensure `Encoder` is `Send`
+
+ -- Proxmox Support Team <support@proxmox.com>  Tue, 02 Feb 2021 10:49:50 +0100
+
 rust-pxar (0.7.0-1) unstable; urgency=medium
 
   * update to tokio 1.0
