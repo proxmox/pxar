@@ -13,12 +13,12 @@ use crate::Metadata;
 ///
 /// This is the `async` version of the `pxar` encoder.
 #[repr(transparent)]
-pub struct Encoder<'a, T: SeqWrite + 'a> {
+pub struct Encoder<'a, T: SeqWrite + 'a + Send> {
     inner: encoder::EncoderImpl<'a, T>,
 }
 
 #[cfg(feature = "tokio-io")]
-impl<'a, T: tokio::io::AsyncWrite + 'a> Encoder<'a, TokioWriter<T>> {
+impl<'a, T: tokio::io::AsyncWrite + 'a + Send> Encoder<'a, TokioWriter<T>> {
     /// Encode a `pxar` archive into a `tokio::io::AsyncWrite` output.
     #[inline]
     pub async fn from_tokio(
@@ -44,11 +44,11 @@ impl<'a> Encoder<'a, TokioWriter<tokio::fs::File>> {
     }
 }
 
-impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
+impl<'a, T: SeqWrite + 'a + Send> Encoder<'a, T> {
     /// Create an asynchronous encoder for an output implementing our internal write interface.
     pub async fn new(output: T, metadata: &Metadata) -> io::Result<Encoder<'a, T>> {
         Ok(Self {
-            inner: encoder::EncoderImpl::new(output, metadata).await?,
+            inner: encoder::EncoderImpl::new(output.into(), metadata).await?,
         })
     }
 
@@ -60,7 +60,7 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
         metadata: &Metadata,
         file_name: P,
         file_size: u64,
-    ) -> io::Result<File<'b>>
+    ) -> io::Result<File<'b, T>>
     where
         'a: 'b,
     {
@@ -94,14 +94,11 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
 
     /// Create a new subdirectory. Note that the subdirectory has to be finished by calling the
     /// `finish()` method, otherwise the entire archive will be in an error state.
-    pub async fn create_directory<'b, P: AsRef<Path>>(
-        &'b mut self,
+    pub async fn create_directory<P: AsRef<Path>>(
+        &mut self,
         file_name: P,
         metadata: &Metadata,
-    ) -> io::Result<Encoder<'b, &'b mut dyn SeqWrite>>
-    where
-        'a: 'b,
-    {
+    ) -> io::Result<Encoder<'_, T>> {
         Ok(Encoder {
             inner: self
                 .inner
@@ -111,13 +108,8 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
     }
 
     /// Finish this directory. This is mandatory, otherwise the `Drop` handler will `panic!`.
-    pub async fn finish(self) -> io::Result<T> {
+    pub async fn finish(self) -> io::Result<()> {
         self.inner.finish().await
-    }
-
-    /// Cancel this directory and get back the contained writer.
-    pub fn into_writer(self) -> T {
-        self.inner.into_writer()
     }
 
     /// Add a symbolic link to the archive.
@@ -176,11 +168,11 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
 }
 
 #[repr(transparent)]
-pub struct File<'a> {
-    inner: encoder::FileImpl<'a>,
+pub struct File<'a, S: SeqWrite> {
+    inner: encoder::FileImpl<'a, S>,
 }
 
-impl<'a> File<'a> {
+impl<'a, S: SeqWrite> File<'a, S> {
     /// Get the file offset to be able to reference it with `add_hardlink`.
     pub fn file_offset(&self) -> LinkOffset {
         self.inner.file_offset()
@@ -198,7 +190,7 @@ impl<'a> File<'a> {
 }
 
 #[cfg(feature = "tokio-io")]
-impl<'a> tokio::io::AsyncWrite for File<'a> {
+impl<'a, S: SeqWrite> tokio::io::AsyncWrite for File<'a, S> {
     fn poll_write(self: Pin<&mut Self>, cx: &mut Context, data: &[u8]) -> Poll<io::Result<usize>> {
         unsafe { self.map_unchecked_mut(|this| &mut this.inner) }.poll_write(cx, data)
     }
@@ -294,10 +286,16 @@ mod test {
             let mut encoder = Encoder::new(DummyOutput, &Metadata::dir_builder(0o700).build())
                 .await
                 .unwrap();
-            encoder
-                .create_directory("baba", &Metadata::dir_builder(0o700).build())
-                .await
-                .unwrap();
+            {
+                let mut dir = encoder
+                    .create_directory("baba", &Metadata::dir_builder(0o700).build())
+                    .await
+                    .unwrap();
+                dir.create_file(&Metadata::file_builder(0o755).build(), "abab", 1024)
+                    .await
+                    .unwrap();
+            }
+            encoder.finish().await.unwrap();
         };
 
         fn test_send<T: Send>(_: T) {}

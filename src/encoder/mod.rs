@@ -48,20 +48,13 @@ pub trait SeqWrite {
     ) -> Poll<io::Result<usize>>;
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>>;
-
-    /// To avoid recursively borrowing each time we nest into a subdirectory we add this helper.
-    /// Otherwise starting a subdirectory will get a trait object pointing to `T`, nesting another
-    /// subdirectory in that would have a trait object pointing to the trait object, and so on.
-    fn as_trait_object(&mut self) -> &mut dyn SeqWrite
-    where
-        Self: Sized,
-    {
-        self as &mut dyn SeqWrite
-    }
 }
 
 /// Allow using trait objects for generics taking a `SeqWrite`.
-impl<'a> SeqWrite for &mut (dyn SeqWrite + 'a) {
+impl<S> SeqWrite for &mut S
+where
+    S: SeqWrite + ?Sized,
+{
     fn poll_seq_write(
         self: Pin<&mut Self>,
         cx: &mut Context,
@@ -75,13 +68,6 @@ impl<'a> SeqWrite for &mut (dyn SeqWrite + 'a) {
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
         unsafe { self.map_unchecked_mut(|this| &mut **this).poll_flush(cx) }
-    }
-
-    fn as_trait_object(&mut self) -> &mut dyn SeqWrite
-    where
-        Self: Sized,
-    {
-        &mut **self
     }
 }
 
@@ -230,12 +216,38 @@ impl EncoderState {
     }
 }
 
+pub(crate) enum EncoderOutput<'a, T> {
+    Owned(T),
+    Borrowed(&'a mut T),
+}
+
+impl<'a, T> std::convert::AsMut<T> for EncoderOutput<'a, T> {
+    fn as_mut(&mut self) -> &mut T {
+        match self {
+            EncoderOutput::Owned(ref mut o) => o,
+            EncoderOutput::Borrowed(b) => b,
+        }
+    }
+}
+
+impl<'a, T> std::convert::From<T> for EncoderOutput<'a, T> {
+    fn from(t: T) -> Self {
+        EncoderOutput::Owned(t)
+    }
+}
+
+impl<'a, T> std::convert::From<&'a mut T> for EncoderOutput<'a, T> {
+    fn from(t: &'a mut T) -> Self {
+        EncoderOutput::Borrowed(t)
+    }
+}
+
 /// The encoder state machine implementation for a directory.
 ///
 /// We use `async fn` to implement the encoder state machine so that we can easily plug in both
 /// synchronous or `async` I/O objects in as output.
 pub(crate) struct EncoderImpl<'a, T: SeqWrite + 'a> {
-    output: Option<T>,
+    output: EncoderOutput<'a, T>,
     state: EncoderState,
     parent: Option<&'a mut EncoderState>,
     finished: bool,
@@ -261,12 +273,12 @@ impl<'a, T: SeqWrite + 'a> Drop for EncoderImpl<'a, T> {
 }
 
 impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
-    pub async fn new(output: T, metadata: &Metadata) -> io::Result<EncoderImpl<'a, T>> {
+    pub(crate) async fn new(output: EncoderOutput<'a, T>, metadata: &Metadata) -> io::Result<EncoderImpl<'a, T>> {
         if !metadata.is_dir() {
             io_bail!("directory metadata must contain the directory mode flag");
         }
         let mut this = Self {
-            output: Some(output),
+            output,
             state: EncoderState::default(),
             parent: None,
             finished: false,
@@ -292,7 +304,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         metadata: &Metadata,
         file_name: &Path,
         file_size: u64,
-    ) -> io::Result<FileImpl<'b>>
+    ) -> io::Result<FileImpl<'b, T>>
     where
         'a: 'b,
     {
@@ -305,7 +317,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         metadata: &Metadata,
         file_name: &[u8],
         file_size: u64,
-    ) -> io::Result<FileImpl<'b>>
+    ) -> io::Result<FileImpl<'b, T>>
     where
         'a: 'b,
     {
@@ -318,7 +330,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         header.check_header_size()?;
 
         seq_write_struct(
-            self.output.as_mut().unwrap(),
+            self.output.as_mut(),
             header,
             &mut self.state.write_position,
         )
@@ -329,7 +341,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         let meta_size = payload_data_offset - file_offset;
 
         Ok(FileImpl {
-            output: self.output.as_mut().unwrap(),
+            output: self.output.as_mut(),
             goodbye_item: GoodbyeItem {
                 hash: format::hash_filename(file_name),
                 offset: file_offset,
@@ -471,7 +483,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         self.start_file_do(metadata, file_name).await?;
         if let Some((htype, entry_data)) = entry_htype_data {
             seq_write_pxar_entry(
-                self.output.as_mut().unwrap(),
+                self.output.as_mut(),
                 htype,
                 entry_data,
                 &mut self.state.write_position,
@@ -495,14 +507,11 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         self.state.write_position
     }
 
-    pub async fn create_directory<'b>(
-        &'b mut self,
+    pub async fn create_directory(
+        &mut self,
         file_name: &Path,
         metadata: &Metadata,
-    ) -> io::Result<EncoderImpl<'b, &'b mut dyn SeqWrite>>
-    where
-        'a: 'b,
-    {
+    ) -> io::Result<EncoderImpl<'_, T>> {
         self.check()?;
 
         if !metadata.is_dir() {
@@ -523,8 +532,11 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         // the child will write to OUR state now:
         let write_position = self.position();
 
+        let file_copy_buffer = Arc::clone(&self.file_copy_buffer);
+
         Ok(EncoderImpl {
-            output: self.output.as_mut().map(SeqWrite::as_trait_object),
+            // always forward as Borrowed(), to avoid stacking references on nested calls
+            output: self.output.as_mut().into(),
             state: EncoderState {
                 entry_offset,
                 files_offset,
@@ -535,7 +547,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
             },
             parent: Some(&mut self.state),
             finished: false,
-            file_copy_buffer: Arc::clone(&self.file_copy_buffer),
+            file_copy_buffer,
         })
     }
 
@@ -553,7 +565,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
 
     async fn encode_metadata(&mut self, metadata: &Metadata) -> io::Result<()> {
         seq_write_pxar_struct_entry(
-            self.output.as_mut().unwrap(),
+            self.output.as_mut(),
             format::PXAR_ENTRY,
             metadata.stat.clone(),
             &mut self.state.write_position,
@@ -579,7 +591,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
 
     async fn write_xattr(&mut self, xattr: &format::XAttr) -> io::Result<()> {
         seq_write_pxar_entry(
-            self.output.as_mut().unwrap(),
+            self.output.as_mut(),
             format::PXAR_XATTR,
             &xattr.data,
             &mut self.state.write_position,
@@ -590,7 +602,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
     async fn write_acls(&mut self, acl: &crate::Acl) -> io::Result<()> {
         for acl in &acl.users {
             seq_write_pxar_struct_entry(
-                self.output.as_mut().unwrap(),
+                self.output.as_mut(),
                 format::PXAR_ACL_USER,
                 acl.clone(),
                 &mut self.state.write_position,
@@ -600,7 +612,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
 
         for acl in &acl.groups {
             seq_write_pxar_struct_entry(
-                self.output.as_mut().unwrap(),
+                self.output.as_mut(),
                 format::PXAR_ACL_GROUP,
                 acl.clone(),
                 &mut self.state.write_position,
@@ -610,7 +622,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
 
         if let Some(acl) = &acl.group_obj {
             seq_write_pxar_struct_entry(
-                self.output.as_mut().unwrap(),
+                self.output.as_mut(),
                 format::PXAR_ACL_GROUP_OBJ,
                 acl.clone(),
                 &mut self.state.write_position,
@@ -620,7 +632,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
 
         if let Some(acl) = &acl.default {
             seq_write_pxar_struct_entry(
-                self.output.as_mut().unwrap(),
+                self.output.as_mut(),
                 format::PXAR_ACL_DEFAULT,
                 acl.clone(),
                 &mut self.state.write_position,
@@ -630,7 +642,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
 
         for acl in &acl.default_users {
             seq_write_pxar_struct_entry(
-                self.output.as_mut().unwrap(),
+                self.output.as_mut(),
                 format::PXAR_ACL_DEFAULT_USER,
                 acl.clone(),
                 &mut self.state.write_position,
@@ -640,7 +652,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
 
         for acl in &acl.default_groups {
             seq_write_pxar_struct_entry(
-                self.output.as_mut().unwrap(),
+                self.output.as_mut(),
                 format::PXAR_ACL_DEFAULT_GROUP,
                 acl.clone(),
                 &mut self.state.write_position,
@@ -653,7 +665,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
 
     async fn write_file_capabilities(&mut self, fcaps: &format::FCaps) -> io::Result<()> {
         seq_write_pxar_entry(
-            self.output.as_mut().unwrap(),
+            self.output.as_mut(),
             format::PXAR_FCAPS,
             &fcaps.data,
             &mut self.state.write_position,
@@ -666,7 +678,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         quota_project_id: &format::QuotaProjectId,
     ) -> io::Result<()> {
         seq_write_pxar_struct_entry(
-            self.output.as_mut().unwrap(),
+            self.output.as_mut(),
             format::PXAR_QUOTA_PROJID,
             *quota_project_id,
             &mut self.state.write_position,
@@ -677,7 +689,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
     async fn encode_filename(&mut self, file_name: &[u8]) -> io::Result<()> {
         crate::util::validate_filename(file_name)?;
         seq_write_pxar_entry_zero(
-            self.output.as_mut().unwrap(),
+            self.output.as_mut(),
             format::PXAR_FILENAME,
             file_name,
             &mut self.state.write_position,
@@ -685,10 +697,10 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         .await
     }
 
-    pub async fn finish(mut self) -> io::Result<T> {
+    pub async fn finish(mut self) -> io::Result<()> {
         let tail_bytes = self.finish_goodbye_table().await?;
         seq_write_pxar_entry(
-            self.output.as_mut().unwrap(),
+            self.output.as_mut(),
             format::PXAR_GOODBYE,
             &tail_bytes,
             &mut self.state.write_position,
@@ -713,11 +725,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
             });
         }
         self.finished = true;
-        Ok(self.output.take().unwrap())
-    }
-
-    pub fn into_writer(mut self) -> T {
-        self.output.take().unwrap()
+        Ok(())
     }
 
     async fn finish_goodbye_table(&mut self) -> io::Result<Vec<u8>> {
@@ -764,8 +772,8 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
 }
 
 /// Writer for a file object in a directory.
-pub struct FileImpl<'a> {
-    output: &'a mut dyn SeqWrite,
+pub struct FileImpl<'a, S: SeqWrite> {
+    output: &'a mut S,
 
     /// This file's `GoodbyeItem`. FIXME: We currently don't touch this, can we just push it
     /// directly instead of on Drop of FileImpl?
@@ -780,7 +788,7 @@ pub struct FileImpl<'a> {
     parent: &'a mut EncoderState,
 }
 
-impl<'a> Drop for FileImpl<'a> {
+impl<'a, S: SeqWrite> Drop for FileImpl<'a, S> {
     fn drop(&mut self) {
         if self.remaining_size != 0 {
             self.parent.add_error(EncodeError::IncompleteFile);
@@ -790,7 +798,7 @@ impl<'a> Drop for FileImpl<'a> {
     }
 }
 
-impl<'a> FileImpl<'a> {
+impl<'a, S: SeqWrite> FileImpl<'a, S> {
     /// Get the file offset to be able to reference it with `add_hardlink`.
     pub fn file_offset(&self) -> LinkOffset {
         LinkOffset(self.goodbye_item.offset)
@@ -828,7 +836,7 @@ impl<'a> FileImpl<'a> {
     #[cfg(feature = "tokio-io")]
     pub fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
         unsafe {
-            self.map_unchecked_mut(|this| &mut this.output)
+            self.map_unchecked_mut(|this| this.output)
                 .poll_flush(cx)
         }
     }
@@ -840,7 +848,7 @@ impl<'a> FileImpl<'a> {
     #[cfg(feature = "tokio-io")]
     pub fn poll_close(self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
         unsafe {
-            self.map_unchecked_mut(|this| &mut this.output)
+            self.map_unchecked_mut(|this| this.output)
                 .poll_flush(cx)
         }
     }
@@ -864,14 +872,14 @@ impl<'a> FileImpl<'a> {
     /// Completely write file data for the current file entry in a pxar archive.
     pub async fn write_all(&mut self, data: &[u8]) -> io::Result<()> {
         self.check_remaining(data.len())?;
-        seq_write_all(&mut self.output, data, &mut self.parent.write_position).await?;
+        seq_write_all(self.output, data, &mut self.parent.write_position).await?;
         self.remaining_size -= data.len() as u64;
         Ok(())
     }
 }
 
 #[cfg(feature = "tokio-io")]
-impl<'a> tokio::io::AsyncWrite for FileImpl<'a> {
+impl<'a, S: SeqWrite> tokio::io::AsyncWrite for FileImpl<'a, S> {
     fn poll_write(self: Pin<&mut Self>, cx: &mut Context, buf: &[u8]) -> Poll<io::Result<usize>> {
         FileImpl::poll_write(self, cx, buf)
     }

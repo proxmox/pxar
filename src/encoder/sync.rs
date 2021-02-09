@@ -52,7 +52,7 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
     /// not allowed to use the `Waker`, as this will cause a `panic!`.
     pub fn new(output: T, metadata: &Metadata) -> io::Result<Self> {
         Ok(Self {
-            inner: poll_result_once(encoder::EncoderImpl::new(output, metadata))?,
+            inner: poll_result_once(encoder::EncoderImpl::new(output.into(), metadata))?,
         })
     }
 
@@ -64,7 +64,7 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
         metadata: &Metadata,
         file_name: P,
         file_size: u64,
-    ) -> io::Result<File<'b>>
+    ) -> io::Result<File<'b, T>>
     where
         'a: 'b,
     {
@@ -95,27 +95,19 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
 
     /// Create a new subdirectory. Note that the subdirectory has to be finished by calling the
     /// `finish()` method, otherwise the entire archive will be in an error state.
-    pub fn create_directory<'b, P: AsRef<Path>>(
-        &'b mut self,
+    pub fn create_directory<P: AsRef<Path>>(
+        &mut self,
         file_name: P,
         metadata: &Metadata,
-    ) -> io::Result<Encoder<'b, &'b mut dyn SeqWrite>>
-    where
-        'a: 'b,
-    {
+    ) -> io::Result<Encoder<'_, T>> {
         Ok(Encoder {
             inner: poll_result_once(self.inner.create_directory(file_name.as_ref(), metadata))?,
         })
     }
 
     /// Finish this directory. This is mandatory, otherwise the `Drop` handler will `panic!`.
-    pub fn finish(self) -> io::Result<T> {
+    pub fn finish(self) -> io::Result<()> {
         poll_result_once(self.inner.finish())
-    }
-
-    /// Cancel this directory and get back the contained writer.
-    pub fn into_writer(self) -> T {
-        self.inner.into_writer()
     }
 
     /// Add a symbolic link to the archive.
@@ -174,18 +166,18 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
 }
 
 #[repr(transparent)]
-pub struct File<'a> {
-    inner: encoder::FileImpl<'a>,
+pub struct File<'a, S: SeqWrite> {
+    inner: encoder::FileImpl<'a, S>,
 }
 
-impl<'a> File<'a> {
+impl<'a, S: SeqWrite> File<'a, S> {
     /// Get the file offset to be able to reference it with `add_hardlink`.
     pub fn file_offset(&self) -> LinkOffset {
         self.inner.file_offset()
     }
 }
 
-impl<'a> io::Write for File<'a> {
+impl<'a, S: SeqWrite> io::Write for File<'a, S> {
     fn write(&mut self, data: &[u8]) -> io::Result<usize> {
         poll_result_once(self.inner.write(data))
     }
