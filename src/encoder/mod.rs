@@ -221,10 +221,20 @@ pub(crate) enum EncoderOutput<'a, T> {
     Borrowed(&'a mut T),
 }
 
+impl<'a, T> EncoderOutput<'a, T> {
+    #[inline]
+    fn to_borrowed<'s>(&'s mut self) -> EncoderOutput<'s, T>
+    where
+        'a: 's,
+    {
+        EncoderOutput::Borrowed(self.as_mut())
+    }
+}
+
 impl<'a, T> std::convert::AsMut<T> for EncoderOutput<'a, T> {
     fn as_mut(&mut self) -> &mut T {
         match self {
-            EncoderOutput::Owned(ref mut o) => o,
+            EncoderOutput::Owned(o) => o,
             EncoderOutput::Borrowed(b) => b,
         }
     }
@@ -273,7 +283,7 @@ impl<'a, T: SeqWrite + 'a> Drop for EncoderImpl<'a, T> {
 }
 
 impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
-    pub(crate) async fn new(output: EncoderOutput<'a, T>, metadata: &Metadata) -> io::Result<EncoderImpl<'a, T>> {
+    pub async fn new(output: EncoderOutput<'a, T>, metadata: &Metadata) -> io::Result<EncoderImpl<'a, T>> {
         if !metadata.is_dir() {
             io_bail!("directory metadata must contain the directory mode flag");
         }
@@ -536,7 +546,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
 
         Ok(EncoderImpl {
             // always forward as Borrowed(), to avoid stacking references on nested calls
-            output: self.output.as_mut().into(),
+            output: self.output.to_borrowed(),
             state: EncoderState {
                 entry_offset,
                 files_offset,
