@@ -13,12 +13,12 @@ use crate::Metadata;
 ///
 /// This is the `async` version of the `pxar` encoder.
 #[repr(transparent)]
-pub struct Encoder<'a, T: SeqWrite + 'a + Send> {
+pub struct Encoder<'a, T: SeqWrite + 'a> {
     inner: encoder::EncoderImpl<'a, T>,
 }
 
 #[cfg(feature = "tokio-io")]
-impl<'a, T: tokio::io::AsyncWrite + 'a + Send> Encoder<'a, TokioWriter<T>> {
+impl<'a, T: tokio::io::AsyncWrite + 'a> Encoder<'a, TokioWriter<T>> {
     /// Encode a `pxar` archive into a `tokio::io::AsyncWrite` output.
     #[inline]
     pub async fn from_tokio(
@@ -44,7 +44,7 @@ impl<'a> Encoder<'a, TokioWriter<tokio::fs::File>> {
     }
 }
 
-impl<'a, T: SeqWrite + 'a + Send> Encoder<'a, T> {
+impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
     /// Create an asynchronous encoder for an output implementing our internal write interface.
     pub async fn new(output: T, metadata: &Metadata) -> io::Result<Encoder<'a, T>> {
         Ok(Self {
