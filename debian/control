@@ -37,10 +37,10 @@ Provides:
  librust-pxar+test-harness-dev (= ${binary:Version}),
  librust-pxar-0-dev (= ${binary:Version}),
  librust-pxar-0+test-harness-dev (= ${binary:Version}),
- librust-pxar-0.8-dev (= ${binary:Version}),
- librust-pxar-0.8+test-harness-dev (= ${binary:Version}),
- librust-pxar-0.8.0-dev (= ${binary:Version}),
- librust-pxar-0.8.0+test-harness-dev (= ${binary:Version})
+ librust-pxar-0.9-dev (= ${binary:Version}),
+ librust-pxar-0.9+test-harness-dev (= ${binary:Version}),
+ librust-pxar-0.9.0-dev (= ${binary:Version}),
+ librust-pxar-0.9.0+test-harness-dev (= ${binary:Version})
 Description: Proxmox Archive format support library - Rust source code
  This package contains the source for the Rust pxar crate, packaged by debcargo
  for use with cargo and dh-cargo.
@@ -54,8 +54,8 @@ Depends:
  librust-anyhow-1+default-dev
 Provides:
  librust-pxar-0+anyhow-dev (= ${binary:Version}),
- librust-pxar-0.8+anyhow-dev (= ${binary:Version}),
- librust-pxar-0.8.0+anyhow-dev (= ${binary:Version})
+ librust-pxar-0.9+anyhow-dev (= ${binary:Version}),
+ librust-pxar-0.9.0+anyhow-dev (= ${binary:Version})
 Description: Proxmox Archive format support library - feature "anyhow"
  This metapackage enables feature "anyhow" for the Rust pxar crate, by pulling
  in any additional dependencies needed by that feature.
@@ -73,8 +73,8 @@ Depends:
  librust-tokio-1+rt-multi-thread-dev
 Provides:
  librust-pxar-0+async-example-dev (= ${binary:Version}),
- librust-pxar-0.8+async-example-dev (= ${binary:Version}),
- librust-pxar-0.8.0+async-example-dev (= ${binary:Version})
+ librust-pxar-0.9+async-example-dev (= ${binary:Version}),
+ librust-pxar-0.9.0+async-example-dev (= ${binary:Version})
 Description: Proxmox Archive format support library - feature "async-example"
  This metapackage enables feature "async-example" for the Rust pxar crate, by
  pulling in any additional dependencies needed by that feature.
@@ -92,12 +92,12 @@ Provides:
  librust-pxar-0+tokio-dev (= ${binary:Version}),
  librust-pxar-0+default-dev (= ${binary:Version}),
  librust-pxar-0+tokio-io-dev (= ${binary:Version}),
- librust-pxar-0.8+tokio-dev (= ${binary:Version}),
- librust-pxar-0.8+default-dev (= ${binary:Version}),
- librust-pxar-0.8+tokio-io-dev (= ${binary:Version}),
- librust-pxar-0.8.0+tokio-dev (= ${binary:Version}),
- librust-pxar-0.8.0+default-dev (= ${binary:Version}),
- librust-pxar-0.8.0+tokio-io-dev (= ${binary:Version})
+ librust-pxar-0.9+tokio-dev (= ${binary:Version}),
+ librust-pxar-0.9+default-dev (= ${binary:Version}),
+ librust-pxar-0.9+tokio-io-dev (= ${binary:Version}),
+ librust-pxar-0.9.0+tokio-dev (= ${binary:Version}),
+ librust-pxar-0.9.0+default-dev (= ${binary:Version}),
+ librust-pxar-0.9.0+tokio-io-dev (= ${binary:Version})
 Description: Proxmox Archive format support library - feature "tokio" and 2 more
  This metapackage enables feature "tokio" for the Rust pxar crate, by pulling in
  any additional dependencies needed by that feature.
@@ -117,10 +117,10 @@ Provides:
  librust-pxar+full-dev (= ${binary:Version}),
  librust-pxar-0+tokio-fs-dev (= ${binary:Version}),
  librust-pxar-0+full-dev (= ${binary:Version}),
- librust-pxar-0.8+tokio-fs-dev (= ${binary:Version}),
- librust-pxar-0.8+full-dev (= ${binary:Version}),
- librust-pxar-0.8.0+tokio-fs-dev (= ${binary:Version}),
- librust-pxar-0.8.0+full-dev (= ${binary:Version})
+ librust-pxar-0.9+tokio-fs-dev (= ${binary:Version}),
+ librust-pxar-0.9+full-dev (= ${binary:Version}),
+ librust-pxar-0.9.0+tokio-fs-dev (= ${binary:Version}),
+ librust-pxar-0.9.0+full-dev (= ${binary:Version})
 Description: Proxmox Archive format support library - feature "tokio-fs" and 1 more
  This metapackage enables feature "tokio-fs" for the Rust pxar crate, by pulling
  in any additional dependencies needed by that feature.
