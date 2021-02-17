@@ -1,3 +1,10 @@
+rust-pxar (0.9.0-1) unstable; urgency=medium
+
+  * Nesting now doesn't use trait objects but non-stacking borrows, therefore
+    they get the type parameter passed along, which is a major API change.
+
+ -- Proxmox Support Team <support@proxmox.com>  Wed, 17 Feb 2021 09:53:21 +0100
+
 rust-pxar (0.8.0-1) unstable; urgency=medium
 
   * fix method naming: `from_futures` -> `from_tokio`
