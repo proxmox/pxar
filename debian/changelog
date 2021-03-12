@@ -1,3 +1,10 @@
+rust-pxar (0.10.0-1) unstable; urgency=medium
+
+  * StatxTimestamp is now explicitly padded with zeroes to avoid situations
+    where uninitialized bytes could end up being written out along with it
+
+ -- Proxmox Support Team <support@proxmox.com>  Fri, 12 Mar 2021 10:37:18 +0100
+
 rust-pxar (0.9.0-1) unstable; urgency=medium
 
   * Nesting now doesn't use trait objects but non-stacking borrows, therefore
