@@ -230,13 +230,19 @@ impl StatxTimestamp {
     /// Create a timestamp from seconds and nanoseconds.
     pub const fn new(secs: i64, nanos: u32) -> Self {
         Self {
-            secs, nanos, _zero: 0,
+            secs,
+            nanos,
+            _zero: 0,
         }
     }
 
     /// `const` version of `Default`
     pub const fn zero() -> Self {
-        Self { secs: 0, nanos: 0, _zero: 0 }
+        Self {
+            secs: 0,
+            nanos: 0,
+            _zero: 0,
+        }
     }
 
     #[cfg(all(test, target_os = "linux"))]
@@ -299,7 +305,11 @@ impl StatxTimestamp {
 
 #[test]
 fn test_statx_timestamp() {
-    assert_eq!(size_of::<StatxTimestamp>(), 16, "StatxTimestamp size needs to be 16 bytes");
+    assert_eq!(
+        size_of::<StatxTimestamp>(),
+        16,
+        "StatxTimestamp size needs to be 16 bytes"
+    );
     const MAY_1_2015_1530: i64 = 1430487000;
     let system_time = SystemTime::UNIX_EPOCH + Duration::new(MAY_1_2015_1530 as u64, 1_000_000);
     let tx = StatxTimestamp::from(system_time);

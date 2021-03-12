@@ -283,7 +283,10 @@ impl<'a, T: SeqWrite + 'a> Drop for EncoderImpl<'a, T> {
 }
 
 impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
-    pub async fn new(output: EncoderOutput<'a, T>, metadata: &Metadata) -> io::Result<EncoderImpl<'a, T>> {
+    pub async fn new(
+        output: EncoderOutput<'a, T>,
+        metadata: &Metadata,
+    ) -> io::Result<EncoderImpl<'a, T>> {
         if !metadata.is_dir() {
             io_bail!("directory metadata must contain the directory mode flag");
         }
@@ -339,12 +342,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         let header = format::Header::with_content_size(format::PXAR_PAYLOAD, file_size);
         header.check_header_size()?;
 
-        seq_write_struct(
-            self.output.as_mut(),
-            header,
-            &mut self.state.write_position,
-        )
-        .await?;
+        seq_write_struct(self.output.as_mut(), header, &mut self.state.write_position).await?;
 
         let payload_data_offset = self.position();
 
@@ -845,10 +843,7 @@ impl<'a, S: SeqWrite> FileImpl<'a, S> {
     /// Poll flush interface to more easily connect to tokio/futures.
     #[cfg(feature = "tokio-io")]
     pub fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
-        unsafe {
-            self.map_unchecked_mut(|this| this.output)
-                .poll_flush(cx)
-        }
+        unsafe { self.map_unchecked_mut(|this| this.output).poll_flush(cx) }
     }
 
     /// Poll close/shutdown interface to more easily connect to tokio/futures.
@@ -857,10 +852,7 @@ impl<'a, S: SeqWrite> FileImpl<'a, S> {
     /// provided by our encoder.
     #[cfg(feature = "tokio-io")]
     pub fn poll_close(self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>> {
-        unsafe {
-            self.map_unchecked_mut(|this| this.output)
-                .poll_flush(cx)
-        }
+        unsafe { self.map_unchecked_mut(|this| this.output).poll_flush(cx) }
     }
 
     /// Write file data for the current file entry in a pxar archive.
