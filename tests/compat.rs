@@ -108,10 +108,7 @@ fn test_archive() {
     assert_eq!(item.metadata().stat, ROOT_STAT.into());
     assert_eq!(
         item.metadata().stat.mtime,
-        format::StatxTimestamp {
-            secs: MAY_1_2015_1530 as i64,
-            nanos: 0,
-        },
+        format::StatxTimestamp::new(MAY_1_2015_1530 as i64, 0),
     );
 
     let item = decoder

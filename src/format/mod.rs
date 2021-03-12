@@ -212,6 +212,9 @@ pub struct StatxTimestamp {
 
     /// Nanoseconds since this struct's `secs`.
     pub nanos: u32,
+
+    /// (Erroneously introduced padding...)
+    _zero: u32,
 }
 
 impl From<SystemTime> for StatxTimestamp {
@@ -224,9 +227,16 @@ impl From<SystemTime> for StatxTimestamp {
 }
 
 impl StatxTimestamp {
+    /// Create a timestamp from seconds and nanoseconds.
+    pub const fn new(secs: i64, nanos: u32) -> Self {
+        Self {
+            secs, nanos, _zero: 0,
+        }
+    }
+
     /// `const` version of `Default`
     pub const fn zero() -> Self {
-        Self { secs: 0, nanos: 0 }
+        Self { secs: 0, nanos: 0, _zero: 0 }
     }
 
     #[cfg(all(test, target_os = "linux"))]
@@ -244,6 +254,7 @@ impl StatxTimestamp {
         Self {
             secs: duration.as_secs() as i64,
             nanos: duration.subsec_nanos(),
+            _zero: 0,
         }
     }
 
@@ -253,10 +264,12 @@ impl StatxTimestamp {
             0 => Self {
                 secs: -(duration.as_secs() as i64),
                 nanos: 0,
+                _zero: 0,
             },
             nanos => Self {
                 secs: -(duration.as_secs() as i64) - 1,
                 nanos: 1_000_000_000 - nanos,
+                _zero: 0,
             },
         }
     }
@@ -286,6 +299,7 @@ impl StatxTimestamp {
 
 #[test]
 fn test_statx_timestamp() {
+    assert_eq!(size_of::<StatxTimestamp>(), 16, "StatxTimestamp size needs to be 16 bytes");
     const MAY_1_2015_1530: i64 = 1430487000;
     let system_time = SystemTime::UNIX_EPOCH + Duration::new(MAY_1_2015_1530 as u64, 1_000_000);
     let tx = StatxTimestamp::from(system_time);
@@ -294,6 +308,7 @@ fn test_statx_timestamp() {
         StatxTimestamp {
             secs: MAY_1_2015_1530,
             nanos: 1_000_000,
+            _zero: 0,
         }
     );
     assert_eq!(tx.system_time(), system_time);
@@ -306,6 +321,7 @@ fn test_statx_timestamp() {
         StatxTimestamp {
             secs: MAY_1_1960_1530 - 1,
             nanos: 999_000_000,
+            _zero: 0,
         }
     );
     assert_eq!(tx.system_time(), system_time);
@@ -317,6 +333,7 @@ fn test_statx_timestamp() {
         StatxTimestamp {
             secs: MAY_1_1960_1530,
             nanos: 0,
+            _zero: 0,
         }
     );
     assert_eq!(tx.system_time(), system_time);
