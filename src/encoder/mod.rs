@@ -83,6 +83,13 @@ async fn seq_write<T: SeqWrite + ?Sized>(
     Ok(put)
 }
 
+/// awaitable version of 'poll_flush'.
+async fn flush<T: SeqWrite + ?Sized>(
+    output: &mut T,
+) -> io::Result<()> {
+    poll_fn(|cx| unsafe { Pin::new_unchecked(&mut *output).poll_flush(cx) }).await
+}
+
 /// Write the entire contents of a buffer, handling short writes.
 async fn seq_write_all<T: SeqWrite + ?Sized>(
     output: &mut T,
@@ -714,6 +721,8 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
             &mut self.state.write_position,
         )
         .await?;
+
+        flush(self.output.as_mut()).await?;
 
         // done up here because of the self-borrow and to propagate
         let end_offset = self.position();
