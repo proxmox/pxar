@@ -5,7 +5,7 @@ use std::io;
 #[cfg(feature = "tokio-fs")]
 use std::path::Path;
 
-use crate::decoder::{self, SeqRead};
+use crate::decoder::{self, Contents, SeqRead};
 use crate::Entry;
 
 /// Asynchronous `pxar` decoder.
@@ -56,6 +56,16 @@ impl<T: SeqRead> Decoder<T> {
         self.inner.next_do().await.transpose()
     }
 
+    /// Get a reader for the contents of the current entry, if the entry has contents.
+    pub fn contents(&mut self) -> Option<Contents<T>> {
+        self.inner.content_reader()
+    }
+
+    /// Get the size of the current contents, if the entry has contents.
+    pub fn content_size(&self) -> Option<u64> {
+        self.inner.content_size()
+    }
+
     /// Include goodbye tables in iteration.
     pub fn enable_goodbye_entries(&mut self, on: bool) {
         self.inner.with_goodbye_tables = on;
@@ -67,6 +77,7 @@ mod tok {
     use std::io;
     use std::pin::Pin;
     use std::task::{Context, Poll};
+    use crate::decoder::{Contents, SeqRead};
 
     /// Read adapter for `futures::io::AsyncRead`
     pub struct TokioReader<T> {
@@ -90,6 +101,29 @@ mod tok {
                 self.map_unchecked_mut(|this| &mut this.inner)
                     .poll_read(cx, &mut read_buf)
                     .map_ok(|_| read_buf.filled().len())
+            }
+        }
+    }
+
+    impl<'a, T: crate::decoder::SeqRead> tokio::io::AsyncRead for Contents<'a, T> {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &mut tokio::io::ReadBuf<'_>,
+        ) -> Poll<io::Result<()>> {
+            unsafe {
+                // Safety: poll_seq_read will *probably* only write to the buffer, so we don't
+                // initialize it first, instead we treat is a &[u8] immediately and uphold the
+                // ReadBuf invariants in the conditional below.
+                let write_buf =
+                    &mut *(buf.unfilled_mut() as *mut [std::mem::MaybeUninit<u8>] as *mut [u8]);
+                let result = self.poll_seq_read(cx, write_buf);
+                if let Poll::Ready(Ok(n)) = result {
+                    // if we've written data, advance both initialized and filled bytes cursor
+                    buf.assume_init(n);
+                    buf.advance(n);
+                }
+                result.map(|_| Ok(()))
             }
         }
     }
