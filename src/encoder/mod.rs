@@ -84,9 +84,7 @@ async fn seq_write<T: SeqWrite + ?Sized>(
 }
 
 /// awaitable version of 'poll_flush'.
-async fn flush<T: SeqWrite + ?Sized>(
-    output: &mut T,
-) -> io::Result<()> {
+async fn flush<T: SeqWrite + ?Sized>(output: &mut T) -> io::Result<()> {
     poll_fn(|cx| unsafe { Pin::new_unchecked(&mut *output).poll_flush(cx) }).await
 }
 
