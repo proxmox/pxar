@@ -722,7 +722,9 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         )
         .await?;
 
-        flush(self.output.as_mut()).await?;
+        if let EncoderOutput::Owned(output) = &mut self.output {
+            flush(output).await?;
+        }
 
         // done up here because of the self-borrow and to propagate
         let end_offset = self.position();
