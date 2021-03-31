@@ -74,10 +74,10 @@ impl<T: SeqRead> Decoder<T> {
 
 #[cfg(feature = "tokio-io")]
 mod tok {
+    use crate::decoder::{Contents, SeqRead};
     use std::io;
     use std::pin::Pin;
     use std::task::{Context, Poll};
-    use crate::decoder::{Contents, SeqRead};
 
     /// Read adapter for `futures::io::AsyncRead`
     pub struct TokioReader<T> {
