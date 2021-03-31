@@ -1,3 +1,11 @@
+rust-pxar (0.10.1-1) unstable; urgency=medium
+
+  * add 'contents' and 'content_size' to aio decoder interface
+
+  * flush the output in Encoder::finish
+
+ -- Proxmox Support Team <support@proxmox.com>  Wed, 31 Mar 2021 13:54:38 +0200
+
 rust-pxar (0.10.0-1) unstable; urgency=medium
 
   * StatxTimestamp is now explicitly padded with zeroes to avoid situations
