@@ -195,6 +195,7 @@ struct EncoderState {
     /// Offset of this directory's ENTRY.
     entry_offset: u64,
 
+    #[allow(dead_code)]
     /// Offset to this directory's first FILENAME.
     files_offset: u64,
 
@@ -228,7 +229,7 @@ pub(crate) enum EncoderOutput<'a, T> {
 
 impl<'a, T> EncoderOutput<'a, T> {
     #[inline]
-    fn to_borrowed<'s>(&'s mut self) -> EncoderOutput<'s, T>
+    fn to_borrowed_mut<'s>(&'s mut self) -> EncoderOutput<'s, T>
     where
         'a: 's,
     {
@@ -549,7 +550,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
 
         Ok(EncoderImpl {
             // always forward as Borrowed(), to avoid stacking references on nested calls
-            output: self.output.to_borrowed(),
+            output: self.output.to_borrowed_mut(),
             state: EncoderState {
                 entry_offset,
                 files_offset,

@@ -527,18 +527,16 @@ impl<I: SeqRead> DecoderImpl<I> {
                 if self.entry.metadata.is_fifo() {
                     self.state = State::InSpecialFile;
                     self.entry.kind = EntryKind::Fifo;
-                    return Ok(ItemResult::Entry);
                 } else if self.entry.metadata.is_socket() {
                     self.state = State::InSpecialFile;
                     self.entry.kind = EntryKind::Socket;
-                    return Ok(ItemResult::Entry);
                 } else {
                     // As a shortcut this is copy-pasted to `next_do`'s `InSpecialFile` case.
                     // Keep in mind when editing this!
                     self.state = State::InDirectory;
                     self.entry.kind = EntryKind::Directory;
-                    return Ok(ItemResult::Entry);
                 }
+                return Ok(ItemResult::Entry);
             }
             _ => io_bail!("unexpected entry type: {}", self.current_header),
         }
