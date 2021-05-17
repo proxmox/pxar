@@ -1,13 +1,25 @@
 use std::io::Read;
 use std::path::Path;
 
-use anyhow::{bail, Error};
-
 use pxar::accessor::sync as accessor;
 use pxar::decoder::sync as decoder;
 use pxar::encoder::sync as encoder;
 use pxar::encoder::SeqWrite;
 use pxar::EntryKind as PxarEntryKind;
+
+macro_rules! format_err {
+    ($($msg:tt)+) => {
+        std::io::Error::new(std::io::ErrorKind::Other, format!($($msg)+))
+    };
+}
+
+macro_rules! bail {
+    ($($msg:tt)+) => {{
+        return Err(format_err!($($msg)+).into());
+    }};
+}
+
+pub type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
 
 mod fs;
 

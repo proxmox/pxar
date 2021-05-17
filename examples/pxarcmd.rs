@@ -5,11 +5,23 @@ use std::os::linux::fs::MetadataExt;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, format_err, Error};
-
 use pxar::accessor::Accessor;
 use pxar::encoder::{Encoder, LinkOffset, SeqWrite};
 use pxar::Metadata;
+
+macro_rules! format_err {
+    ($($msg:tt)+) => {
+        std::io::Error::new(std::io::ErrorKind::Other, format!($($msg)+))
+    };
+}
+
+macro_rules! bail {
+    ($($msg:tt)+) => {{
+        return Err(format_err!($($msg)+).into());
+    }};
+}
+
+type Error = Box<dyn std::error::Error + Send + Sync + 'static>;
 
 fn main() -> Result<(), Error> {
     let mut args = std::env::args_os();

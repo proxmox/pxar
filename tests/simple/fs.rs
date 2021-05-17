@@ -2,8 +2,6 @@ use std::collections::HashMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, format_err, Error};
-
 use pxar::decoder::sync as decoder;
 use pxar::decoder::SeqRead;
 use pxar::encoder::sync as encoder;
@@ -12,6 +10,8 @@ use pxar::format::acl::{self, Permissions};
 use pxar::format::{mode, Device};
 use pxar::EntryKind as PxarEntryKind;
 use pxar::Metadata;
+
+use crate::Error;
 
 /// Hardlink information we use while encoding pxar archives.
 pub struct HardlinkInfo {
