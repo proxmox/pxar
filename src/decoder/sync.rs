@@ -29,6 +29,7 @@ impl<T: io::Read> Decoder<StandardReader<T>> {
         Decoder::new(StandardReader::new(input))
     }
 
+    /// Get a direct reference to the reader contained inside the contained [`StandardReader`].
     pub fn input(&mut self) -> &T {
         self.inner.input().inner()
     }
@@ -96,10 +97,12 @@ pub struct StandardReader<T> {
 }
 
 impl<T: io::Read> StandardReader<T> {
+    /// Make a new [`StandardReader`].
     pub fn new(inner: T) -> Self {
         Self { inner }
     }
 
+    /// Get an immutable reference to the contained reader.
     pub fn inner(&self) -> &T {
         &self.inner
     }
@@ -115,6 +118,7 @@ impl<T: io::Read> SeqRead for StandardReader<T> {
     }
 }
 
+/// Reader for file contents inside a pxar archive.
 pub struct Contents<'a, T: SeqRead> {
     inner: decoder::Contents<'a, T>,
 }

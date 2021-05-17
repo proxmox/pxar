@@ -27,6 +27,8 @@
 //! Heap](https://en.wikipedia.org/wiki/Binary_heap) gives a short
 //! intro howto store binary trees using an array.
 
+#![deny(missing_docs)]
+
 use std::cmp::Ordering;
 
 #[allow(clippy::many_single_char_names)]

@@ -87,6 +87,7 @@ impl<T: ReadAt> Accessor<T> {
         )?))
     }
 
+    /// Set a cache for the goodbye tables to reduce random disk access.
     pub fn set_goodbye_table_cache<C>(&mut self, cache: Option<C>)
     where
         C: Cache<u64, [GoodbyeItem]> + Send + Sync + 'static,
@@ -103,6 +104,7 @@ impl<T: ReadAt> Accessor<T> {
 }
 
 impl<T: Clone + ReadAt> Accessor<T> {
+    /// Open the "root" directory entry of this pxar archive.
     pub fn open_root(&self) -> io::Result<Directory<T>> {
         Ok(Directory::new(poll_result_once(self.inner.open_root())?))
     }
@@ -155,13 +157,14 @@ impl<T: Clone + ReadAt> Accessor<T> {
     }
 }
 
-/// Adapter for FileExt readers.
+/// Adapter for `FileExt` readers to make it usable via the `ReadAt` trait.
 #[derive(Clone)]
 pub struct FileReader<T> {
     inner: T,
 }
 
 impl<T: FileExt> FileReader<T> {
+    /// Wrap a regular reader to access it via the `ReadAt` trait.
     pub fn new(inner: T) -> Self {
         Self { inner }
     }
@@ -185,13 +188,14 @@ impl<T: FileExt> ReadAt for FileReader<T> {
     }
 }
 
-/// Adapter for `Arc` or `Rc` to FileExt readers.
+/// Adapter for `Arc` or `Rc` to `FileExt` readers to make it usable via the `ReadAt` trait.
 #[derive(Clone)]
 pub struct FileRefReader<T: Clone> {
     inner: T,
 }
 
 impl<T: Clone> FileRefReader<T> {
+    /// Wrap a reference to a `FileExt` reader.
     pub fn new(inner: T) -> Self {
         Self { inner }
     }
@@ -291,6 +295,7 @@ impl<T: Clone + ReadAt> FileEntry<T> {
         self.inner.content_range()
     }
 
+    /// Get the file's contents.
     pub fn contents(&self) -> io::Result<FileContents<T>> {
         Ok(FileContents {
             inner: poll_result_once(self.inner.contents())?,
@@ -298,11 +303,14 @@ impl<T: Clone + ReadAt> FileEntry<T> {
         })
     }
 
+    /// Convenience shortcut for when only the metadata contained in the [`Entry`] struct is of
+    /// interest.
     #[inline]
     pub fn into_entry(self) -> Entry {
         self.inner.into_entry()
     }
 
+    /// Access the contained [`Entry`] for metadata access.
     #[inline]
     pub fn entry(&self) -> &Entry {
         &self.inner.entry()

@@ -692,6 +692,8 @@ pub struct QuotaProjectId {
     pub projid: u64,
 }
 
+/// An entry in the "goodbye table" in a pxar archive. This is required for random access inside
+/// pxar archives.
 #[derive(Clone, Debug, Endian)]
 #[repr(C)]
 pub struct GoodbyeItem {
@@ -712,12 +714,15 @@ pub struct GoodbyeItem {
 }
 
 impl GoodbyeItem {
+    /// Create a new [`GoodbyeItem`] by hashing the name, and storing the hash along with the
+    /// offset and size information.
     pub fn new(name: &[u8], offset: u64, size: u64) -> Self {
         let hash = hash_filename(name);
         Self { hash, offset, size }
     }
 }
 
+/// Hash a file name for use in the goodbye table.
 pub fn hash_filename(name: &[u8]) -> u64 {
     use std::hash::Hasher;
 
@@ -726,6 +731,8 @@ pub fn hash_filename(name: &[u8]) -> u64 {
     hasher.finish()
 }
 
+/// Returns `true` if the path consists only of [`Normal`](std::path::Component::Normal)
+/// components.
 pub fn path_is_legal_component(path: &Path) -> bool {
     let mut components = path.components();
     match components.next() {
@@ -735,6 +742,10 @@ pub fn path_is_legal_component(path: &Path) -> bool {
     components.next().is_none()
 }
 
+/// Assert sure the path consists only of [`Normal`](std::path::Component::Normal) components.
+///
+/// Returns an [`io::Error`](std::io::Error) of type [`Other`](std::io::ErrorKind::Other) if that's
+/// not the case.
 pub fn check_file_name(path: &Path) -> io::Result<()> {
     if !path_is_legal_component(path) {
         io_bail!("invalid file name in archive: {:?}", path);

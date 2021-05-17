@@ -152,11 +152,13 @@ impl From<MetadataBuilder> for Metadata {
     }
 }
 
+/// A builder for the file [`Metadata`] stored in pxar archives.
 pub struct MetadataBuilder {
     inner: Metadata,
 }
 
 impl MetadataBuilder {
+    /// Create a new [`MetadataBuilder`] given an initial type/mode bitset.
     pub const fn new(type_and_mode: u64) -> Self {
         Self {
             inner: Metadata {
@@ -182,6 +184,7 @@ impl MetadataBuilder {
         }
     }
 
+    /// Build the [`Metadata`].
     pub fn build(self) -> Metadata {
         self.inner
     }
@@ -323,6 +326,7 @@ pub struct Acl {
 }
 
 impl Acl {
+    /// Shortcut to check if all fields of this [`Acl`] entry are empty.
     pub fn is_empty(&self) -> bool {
         self.users.is_empty()
             && self.groups.is_empty()
@@ -354,7 +358,13 @@ pub enum EntryKind {
     Fifo,
 
     /// Regular file.
-    File { size: u64, offset: Option<u64> },
+    File {
+        /// The file size in bytes.
+        size: u64,
+
+        /// The file's byte offset inside the archive, if available.
+        offset: Option<u64>,
+    },
 
     /// Directory entry. When iterating through an archive, the contents follow next.
     Directory,

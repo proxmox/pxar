@@ -2,6 +2,8 @@
 //!
 //! This is the implementation used by both the synchronous and async pxar wrappers.
 
+#![deny(missing_docs)]
+
 use std::convert::TryFrom;
 use std::ffi::OsString;
 use std::io;
@@ -651,6 +653,7 @@ impl<I: SeqRead> DecoderImpl<I> {
     }
 }
 
+/// Reader for file contents inside a pxar archive.
 pub struct Contents<'a, T: SeqRead> {
     input: &'a mut T,
     at: &'a mut u64,
@@ -658,7 +661,7 @@ pub struct Contents<'a, T: SeqRead> {
 }
 
 impl<'a, T: SeqRead> Contents<'a, T> {
-    pub fn new(input: &'a mut T, at: &'a mut u64, len: u64) -> Self {
+    fn new(input: &'a mut T, at: &'a mut u64, len: u64) -> Self {
         Self { input, at, len }
     }
 

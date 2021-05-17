@@ -2,6 +2,8 @@
 //!
 //! This is the implementation used by both the synchronous and async pxar wrappers.
 
+#![deny(missing_docs)]
+
 use std::io;
 use std::mem::{forget, size_of, size_of_val, take};
 use std::os::unix::ffi::OsStrExt;
@@ -29,6 +31,7 @@ pub use sync::Encoder;
 pub struct LinkOffset(u64);
 
 impl LinkOffset {
+    /// Get the raw byte offset of this link.
     #[inline]
     pub fn raw(self) -> u64 {
         self.0
@@ -41,12 +44,23 @@ impl LinkOffset {
 /// synchronous wrapper and for both `tokio` and `future` `AsyncWrite` types in the asynchronous
 /// wrapper.
 pub trait SeqWrite {
+    /// Attempt to perform a sequential write to the file. On success, the number of written bytes
+    /// is returned as `Poll::Ready(Ok(bytes))`.
+    ///
+    /// If writing is not yet possible, `Poll::Pending` is returned and the current task will be
+    /// notified via the `cx.waker()` when writing becomes possible.
     fn poll_seq_write(
         self: Pin<&mut Self>,
         cx: &mut Context,
         buf: &[u8],
     ) -> Poll<io::Result<usize>>;
 
+    /// Attempt to flush the output, ensuring that all buffered data reaches the destination.
+    ///
+    /// On success, returns `Poll::Ready(Ok(()))`.
+    ///
+    /// If flushing cannot complete immediately, `Poll::Pending` is returned and the current task
+    /// will be notified via `cx.waker()` when progress can be made.
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context) -> Poll<io::Result<()>>;
 }
 
@@ -790,7 +804,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
 }
 
 /// Writer for a file object in a directory.
-pub struct FileImpl<'a, S: SeqWrite> {
+pub(crate) struct FileImpl<'a, S: SeqWrite> {
     output: &'a mut S,
 
     /// This file's `GoodbyeItem`. FIXME: We currently don't touch this, can we just push it

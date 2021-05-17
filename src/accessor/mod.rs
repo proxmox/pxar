@@ -1,5 +1,7 @@
 //! Random access for PXAR files.
 
+#![deny(missing_docs)]
+
 use std::ffi::{OsStr, OsString};
 use std::future::Future;
 use std::io;
@@ -36,11 +38,14 @@ use cache::Cache;
 /// Range information used for unsafe raw random access:
 #[derive(Clone, Debug)]
 pub struct EntryRangeInfo {
+    /// Offset to the `FILENAME` header.
     pub filename_header_offset: Option<u64>,
+    /// Byte range spanning an entry in a pxar archive.
     pub entry_range: Range<u64>,
 }
 
 impl EntryRangeInfo {
+    /// Shortcut to create the "toplevel" range info without file name header offset.
     pub fn toplevel(entry_range: Range<u64>) -> Self {
         Self {
             filename_header_offset: None,
@@ -888,6 +893,8 @@ struct ReadResult {
     buffer: Vec<u8>,
 }
 
+/// A `SeqRead` adapter for a specific range inside another reader, with a temporary buffer due
+/// to lifetime constraints.
 #[doc(hidden)]
 pub struct SeqReadAtAdapter<T> {
     input: T,
@@ -910,6 +917,7 @@ impl<T> Drop for SeqReadAtAdapter<T> {
 }
 
 impl<T: ReadAt> SeqReadAtAdapter<T> {
+    /// Create a new `SeqRead` adapter given a range.
     pub fn new(input: T, range: Range<u64>) -> Self {
         if range.end < range.start {
             panic!("BAD SEQ READ AT ADAPTER");

@@ -165,6 +165,11 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
     }
 }
 
+/// This is a "file" inside a pxar archive, to which the initially declared amount of data should
+/// be written.
+///
+/// Writing more or less than the designated amount is an error and will cause the produced archive
+/// to be broken.
 #[repr(transparent)]
 pub struct File<'a, S: SeqWrite> {
     inner: encoder::FileImpl<'a, S>,
@@ -187,12 +192,13 @@ impl<'a, S: SeqWrite> io::Write for File<'a, S> {
     }
 }
 
-/// Pxar encoder write adapter for `std::io::Write`.
+/// Pxar encoder write adapter for [`Write`](std::io::Write).
 pub struct StandardWriter<T> {
     inner: Option<T>,
 }
 
 impl<T: io::Write> StandardWriter<T> {
+    /// Make a new [`SeqWrite`] wrapper for an object implementing [`Write`](std::io::Write).
     pub fn new(inner: T) -> Self {
         Self { inner: Some(inner) }
     }

@@ -96,6 +96,7 @@ impl<T: ReadAt> Accessor<T> {
         Ok(Directory::new(self.inner.open_root_ref().await?))
     }
 
+    /// Set a cache for the goodbye tables to reduce random disk access.
     pub fn set_goodbye_table_cache<C>(&mut self, cache: Option<C>)
     where
         C: Cache<u64, [GoodbyeItem]> + Send + Sync + 'static,
@@ -112,6 +113,7 @@ impl<T: ReadAt> Accessor<T> {
 }
 
 impl<T: Clone + ReadAt> Accessor<T> {
+    /// Open the "root" directory entry of this pxar archive.
     pub async fn open_root(&self) -> io::Result<Directory<T>> {
         Ok(Directory::new(self.inner.open_root().await?))
     }
@@ -233,6 +235,7 @@ impl<T: Clone + ReadAt> FileEntry<T> {
         self.inner.content_range()
     }
 
+    /// Get the file's contents.
     pub async fn contents(&self) -> io::Result<FileContents<T>> {
         Ok(FileContents {
             inner: self.inner.contents().await?,
@@ -242,11 +245,14 @@ impl<T: Clone + ReadAt> FileEntry<T> {
         })
     }
 
+    /// Convenience shortcut for when only the metadata contained in the [`Entry`] struct is of
+    /// interest.
     #[inline]
     pub fn into_entry(self) -> Entry {
         self.inner.into_entry()
     }
 
+    /// Access the contained [`Entry`] for metadata access.
     #[inline]
     pub fn entry(&self) -> &Entry {
         &self.inner.entry()
@@ -288,6 +294,7 @@ impl<'a, T: Clone + ReadAt> ReadDir<'a, T> {
         self.inner.count()
     }
 
+    /// Get the next directory entry.
     pub async fn next(&mut self) -> Option<io::Result<DirEntry<'a, T>>> {
         match self.inner.next().await {
             Ok(Some(inner)) => Some(Ok(DirEntry { inner })),
