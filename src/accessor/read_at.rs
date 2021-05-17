@@ -47,22 +47,23 @@ pub trait ReadAtExt: ReadAt {
     where
         Self: Sized,
     {
-        ReadAtImpl::New(self, buf, offset)
+        ReadAtImpl::new(self, buf, offset)
     }
 }
 
 impl<T: ReadAt> ReadAtExt for T {}
 
-pub enum ReadAtImpl<'a, T: ReadAt> {
-    Invalid,
-    New(&'a T, &'a mut [u8], u64),
-    Pending(&'a T, ReadAtOperation<'a>),
-    Ready(io::Result<usize>),
+/// Future returned by [`ReadAtExt::read_at`](ReadAtExt::read_at()).
+#[repr(transparent)]
+pub struct ReadAtImpl<'a, T: ReadAt> {
+    state: ReadAtState<'a, T>,
 }
 
-impl<T: ReadAt> ReadAtImpl<'_, T> {
-    fn take(&mut self) -> Self {
-        std::mem::replace(self, ReadAtImpl::Invalid)
+impl<'a, T: ReadAt> ReadAtImpl<'a, T> {
+    fn new(read: &'a T, buf: &'a mut [u8], offset: u64) -> Self {
+        Self {
+            state: ReadAtState::New(read, buf, offset),
+        }
     }
 }
 
@@ -70,22 +71,41 @@ impl<'a, T: ReadAt> Future for ReadAtImpl<'a, T> {
     type Output = io::Result<usize>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        unsafe { self.map_unchecked_mut(|this| &mut this.state).poll(cx) }
+    }
+}
+
+enum ReadAtState<'a, T: ReadAt> {
+    Invalid,
+    New(&'a T, &'a mut [u8], u64),
+    Pending(&'a T, ReadAtOperation<'a>),
+}
+
+impl<T: ReadAt> ReadAtState<'_, T> {
+    fn take(&mut self) -> Self {
+        std::mem::replace(self, ReadAtState::Invalid)
+    }
+}
+
+impl<'a, T: ReadAt> Future for ReadAtState<'a, T> {
+    type Output = io::Result<usize>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let this = unsafe { Pin::into_inner_unchecked(self) };
         loop {
             match match this.take() {
-                ReadAtImpl::New(reader, buf, offset) => {
+                ReadAtState::New(reader, buf, offset) => {
                     let pin = unsafe { Pin::new_unchecked(reader) };
                     (pin.start_read_at(cx, buf, offset), reader)
                 }
-                ReadAtImpl::Pending(reader, op) => {
+                ReadAtState::Pending(reader, op) => {
                     let pin = unsafe { Pin::new_unchecked(reader) };
                     (pin.poll_complete(op), reader)
                 }
-                ReadAtImpl::Ready(out) => return Poll::Ready(out),
-                ReadAtImpl::Invalid => panic!("poll after ready"),
+                ReadAtState::Invalid => panic!("poll after ready"),
             } {
                 (MaybeReady::Ready(out), _reader) => return Poll::Ready(out),
-                (MaybeReady::Pending(op), reader) => *this = ReadAtImpl::Pending(reader, op),
+                (MaybeReady::Pending(op), reader) => *this = ReadAtState::Pending(reader, op),
             }
         }
     }
