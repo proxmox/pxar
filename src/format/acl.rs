@@ -7,7 +7,7 @@ use endian_trait::Endian;
 pub const READ: u64 = 4;
 pub const WRITE: u64 = 2;
 pub const EXECUTE: u64 = 1;
-pub const NO_MASK: u64 = std::u64::MAX;
+pub const NO_MASK: u64 = u64::MAX;
 
 /// ACL permission bits.
 ///
