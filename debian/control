@@ -1,8 +1,8 @@
 Source: rust-pxar
 Section: rust
 Priority: optional
-Build-Depends: debhelper (>= 11),
- dh-cargo (>= 18),
+Build-Depends: debhelper (>= 12),
+ dh-cargo (>= 24),
  cargo:native <!nocheck>,
  rustc:native <!nocheck>,
  libstd-rust-dev <!nocheck>,
@@ -13,9 +13,10 @@ Build-Depends: debhelper (>= 11),
  librust-siphasher-0.3+default-dev <!nocheck>,
  librust-tokio-1-dev <!nocheck>
 Maintainer: Proxmox Support Team <support@proxmox.com>
-Standards-Version: 4.4.1
+Standards-Version: 4.5.1
 Vcs-Git: 
 Vcs-Browser: 
+Rules-Requires-Root: no
 
 Package: librust-pxar-dev
 Architecture: any
@@ -30,7 +31,6 @@ Depends:
 Recommends:
  librust-pxar+tokio-dev (= ${binary:Version})
 Suggests:
- librust-pxar+anyhow-dev (= ${binary:Version}),
  librust-pxar+async-example-dev (= ${binary:Version}),
  librust-pxar+tokio-fs-dev (= ${binary:Version})
 Provides:
@@ -45,21 +45,6 @@ Description: Proxmox Archive format support library - Rust source code
  This package contains the source for the Rust pxar crate, packaged by debcargo
  for use with cargo and dh-cargo.
 
-Package: librust-pxar+anyhow-dev
-Architecture: any
-Multi-Arch: same
-Depends:
- ${misc:Depends},
- librust-pxar-dev (= ${binary:Version}),
- librust-anyhow-1+default-dev
-Provides:
- librust-pxar-0+anyhow-dev (= ${binary:Version}),
- librust-pxar-0.10+anyhow-dev (= ${binary:Version}),
- librust-pxar-0.10.1+anyhow-dev (= ${binary:Version})
-Description: Proxmox Archive format support library - feature "anyhow"
- This metapackage enables feature "anyhow" for the Rust pxar crate, by pulling
- in any additional dependencies needed by that feature.
-
 Package: librust-pxar+async-example-dev
 Architecture: any
 Multi-Arch: same
@@ -68,7 +53,6 @@ Depends:
  librust-pxar-dev (= ${binary:Version}),
  librust-pxar+tokio-io-dev (= ${binary:Version}),
  librust-pxar+tokio-fs-dev (= ${binary:Version}),
- librust-anyhow-1+default-dev,
  librust-tokio-1+macros-dev,
  librust-tokio-1+rt-multi-thread-dev
 Provides:
