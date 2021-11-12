@@ -257,7 +257,7 @@ impl<T: Clone + ReadAt> FileEntry<T> {
     /// Access the contained [`Entry`] for metadata access.
     #[inline]
     pub fn entry(&self) -> &Entry {
-        &self.inner.entry()
+        self.inner.entry()
     }
 
     /// Exposed for raw by-offset access methods (use with `open_dir_at_end`).

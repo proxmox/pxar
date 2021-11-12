@@ -553,7 +553,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         self.encode_filename(file_name).await?;
 
         let entry_offset = self.position();
-        self.encode_metadata(&metadata).await?;
+        self.encode_metadata(metadata).await?;
 
         let files_offset = self.position();
 
@@ -586,7 +586,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
     ) -> io::Result<()> {
         self.encode_filename(file_name).await?;
         if let Some(metadata) = metadata {
-            self.encode_metadata(&metadata).await?;
+            self.encode_metadata(metadata).await?;
         }
         Ok(())
     }

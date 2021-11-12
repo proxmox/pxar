@@ -623,7 +623,7 @@ impl XAttr {
 
 impl Ord for XAttr {
     fn cmp(&self, other: &XAttr) -> Ordering {
-        self.name().cmp(&other.name())
+        self.name().cmp(other.name())
     }
 }
 
