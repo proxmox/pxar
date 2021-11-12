@@ -125,7 +125,9 @@ impl<T: Clone + ReadAt> Accessor<T> {
     /// This should only be used with offsets known to point to the end of a directory, otherwise
     /// this usually fails, unless the data otherwise happens to look like a valid directory.
     pub async unsafe fn open_dir_at_end(&self, offset: u64) -> io::Result<Directory<T>> {
-        Ok(Directory::new(self.inner.open_dir_at_end(offset).await?))
+        Ok(Directory::new(unsafe {
+            self.inner.open_dir_at_end(offset).await?
+        }))
     }
 
     /// Allow opening a regular file from a specified range.
@@ -139,7 +141,7 @@ impl<T: Clone + ReadAt> Accessor<T> {
         entry_range_info: &accessor::EntryRangeInfo,
     ) -> io::Result<FileEntry<T>> {
         Ok(FileEntry {
-            inner: self.inner.open_file_at_range(entry_range_info).await?,
+            inner: unsafe { self.inner.open_file_at_range(entry_range_info).await? },
         })
     }
 
@@ -151,7 +153,7 @@ impl<T: Clone + ReadAt> Accessor<T> {
     /// comes from a actual file entry data, the contents might not make much sense.
     pub unsafe fn open_contents_at_range(&self, range: Range<u64>) -> FileContents<T> {
         FileContents {
-            inner: self.inner.open_contents_at_range(range),
+            inner: unsafe { self.inner.open_contents_at_range(range) },
             at: 0,
             buffer: Vec::new(),
             future: None,

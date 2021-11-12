@@ -2,6 +2,8 @@
 //!
 //! This implements a reader and writer for the proxmox archive format (.pxar).
 
+#![deny(unsafe_op_in_unsafe_fn)]
+
 use std::ffi::OsStr;
 use std::mem;
 use std::path::{Path, PathBuf};
