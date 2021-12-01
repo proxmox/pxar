@@ -774,6 +774,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         tail.sort_unstable_by(|a, b| a.hash.cmp(&b.hash));
 
         let mut bst = Vec::with_capacity(tail.len() + 1);
+        #[allow(clippy::uninit_vec)]
         unsafe {
             bst.set_len(tail.len());
         }
