@@ -4,7 +4,6 @@
 
 #![deny(missing_docs)]
 
-use std::convert::TryFrom;
 use std::ffi::OsString;
 use std::io;
 use std::mem::{self, size_of, size_of_val, MaybeUninit};
