@@ -119,7 +119,7 @@ async fn seq_read_exact_data<T>(input: &mut T, size: usize) -> io::Result<Vec<u8
 where
     T: SeqRead + ?Sized,
 {
-    let mut data = util::vec_new(size);
+    let mut data = unsafe { util::vec_new_uninitialized(size) };
     seq_read_exact(input, &mut data[..]).await?;
     Ok(data)
 }

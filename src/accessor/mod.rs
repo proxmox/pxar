@@ -96,7 +96,7 @@ async fn read_exact_data_at<T>(input: &T, size: usize, offset: u64) -> io::Resul
 where
     T: ReadAt,
 {
-    let mut data = util::vec_new(size);
+    let mut data = unsafe { util::vec_new_uninitialized(size) };
     read_exact_at(input, &mut data[..], offset).await?;
     Ok(data)
 }
@@ -171,16 +171,10 @@ impl ReadAt for &'_ [u8] {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 struct Caches {
     /// The goodbye table cache maps goodbye table offsets to cache entries.
     gbt_cache: Option<Arc<dyn Cache<u64, [GoodbyeItem]> + Send + Sync>>,
-}
-
-impl Default for Caches {
-    fn default() -> Self {
-        Self { gbt_cache: None }
-    }
 }
 
 /// The random access state machine implementation.
@@ -433,9 +427,9 @@ impl<T: Clone + ReadAt> DirectoryImpl<T> {
     /// Load the entire goodbye table:
     async fn load_table(&self) -> io::Result<Arc<[GoodbyeItem]>> {
         let len = self.len();
-        let mut data = Vec::with_capacity(self.len());
+        let mut data;
         unsafe {
-            data.set_len(len);
+            data = crate::util::vec_new_uninitialized(self.len());
             let slice = std::slice::from_raw_parts_mut(
                 data.as_mut_ptr() as *mut u8,
                 len * size_of::<GoodbyeItem>(),
@@ -906,6 +900,7 @@ pub struct SeqReadAtAdapter<T> {
 // We lose `Send` via the boxed trait object and don't want to force the trait object to
 // potentially be more strict than `T`, so we leave it as it is ans implement Send and Sync
 // depending on T.
+#[allow(clippy::non_send_fields_in_send_ty)]
 unsafe impl<T: Send> Send for SeqReadAtAdapter<T> {}
 unsafe impl<T: Sync> Sync for SeqReadAtAdapter<T> {}
 

@@ -315,7 +315,9 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
             state: EncoderState::default(),
             parent: None,
             finished: false,
-            file_copy_buffer: Arc::new(Mutex::new(crate::util::vec_new(1024 * 1024))),
+            file_copy_buffer: Arc::new(Mutex::new(unsafe {
+                crate::util::vec_new_uninitialized(1024 * 1024)
+            })),
         };
 
         this.encode_metadata(metadata).await?;

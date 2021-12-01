@@ -7,6 +7,7 @@ use std::task::{Context, Poll};
 
 pub const MAX_READ_BUF_LEN: usize = 4 * 1024 * 1024;
 
+#[allow(clippy::uninit_vec)]
 pub fn scale_read_buffer(buffer: &mut Vec<u8>, target: usize) {
     let target = target.min(MAX_READ_BUF_LEN);
 
@@ -90,12 +91,11 @@ pub fn read_os_string(buffer: &[u8]) -> std::ffi::OsString {
 }
 
 #[inline]
-pub fn vec_new(size: usize) -> Vec<u8> {
-    let mut data = Vec::with_capacity(size);
+pub unsafe fn vec_new_uninitialized<T>(len: usize) -> Vec<T> {
     unsafe {
-        data.set_len(size);
+        let data = std::alloc::alloc(std::alloc::Layout::array::<T>(len).unwrap());
+        Vec::from_raw_parts(data as *mut T, len, len)
     }
-    data
 }
 
 pub fn io_err_other<E: std::fmt::Display>(err: E) -> io::Error {

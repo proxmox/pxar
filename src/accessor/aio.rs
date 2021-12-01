@@ -352,8 +352,9 @@ pub struct FileContents<T> {
 }
 
 // We lose `Send` via the boxed trait object and don't want to force the trait object to
-// potentially be more strict than `T`, so we leave it as it is ans implement Send and Sync
+// potentially be more strict than `T`, so we leave it as it is and implement Send and Sync
 // depending on T.
+#[allow(clippy::non_send_fields_in_send_ty)]
 unsafe impl<T: Send> Send for FileContents<T> {}
 unsafe impl<T: Sync> Sync for FileContents<T> {}
 
