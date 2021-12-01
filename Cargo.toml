@@ -3,7 +3,7 @@ name = "pxar"
 # API broken, next is 0.11.0 (due to `ReadAtImpl` enum variants being made private)
 version = "0.10.1"
 authors = ["Wolfgang Bumiller <w.bumiller@proxmox.com>"]
-edition = "2018"
+edition = "2021"
 license = "AGPL-3"
 description = "Proxmox Archive format support library"
 exclude = [
