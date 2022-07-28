@@ -228,7 +228,7 @@ async fn get_decoder<T: ReadAt>(
     entry_range: Range<u64>,
     path: PathBuf,
 ) -> io::Result<DecoderImpl<SeqReadAtAdapter<T>>> {
-    Ok(DecoderImpl::new_full(SeqReadAtAdapter::new(input, entry_range), path, true).await?)
+    DecoderImpl::new_full(SeqReadAtAdapter::new(input, entry_range), path, true).await
 }
 
 // NOTE: This performs the Decoder::read_next_item() behavior! Keep in mind when changing!
