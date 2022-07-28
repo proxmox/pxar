@@ -3,5 +3,5 @@
 # call we need them
 dependencies:
 - librust-tokio-dev
-- librust-tokio+macros-dev
+- librust-tokio+tokio-macros-dev
 - librust-tokio+rt-multi-thread-dev
