@@ -382,6 +382,31 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         })
     }
 
+    fn take_file_copy_buffer(&self) -> Vec<u8> {
+        let buf: Vec<_> = take(
+            &mut self
+                .file_copy_buffer
+                .lock()
+                .expect("failed to lock temporary buffer mutex"),
+        );
+        if buf.len() < 1024 * 1024 {
+            drop(buf);
+            unsafe { crate::util::vec_new_uninitialized(1024 * 1024) }
+        } else {
+            buf
+        }
+    }
+
+    fn put_file_copy_buffer(&self, buf: Vec<u8>) {
+        let mut lock = self
+            .file_copy_buffer
+            .lock()
+            .expect("failed to lock temporary buffer mutex");
+        if lock.len() < buf.len() {
+            *lock = buf;
+        }
+    }
+
     /// Return a file offset usable with `add_hardlink`.
     pub async fn add_file(
         &mut self,
@@ -390,9 +415,8 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         file_size: u64,
         content: &mut dyn SeqRead,
     ) -> io::Result<LinkOffset> {
-        let buf = Arc::clone(&self.file_copy_buffer);
+        let mut buf = self.take_file_copy_buffer();
         let mut file = self.create_file(metadata, file_name, file_size).await?;
-        let mut buf = buf.lock().expect("failed to lock temporary buffer mutex");
         loop {
             let got = decoder::seq_read(&mut *content, &mut buf[..]).await?;
             if got == 0 {
@@ -401,7 +425,10 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
                 file.write_all(&buf[..got]).await?;
             }
         }
-        Ok(file.file_offset())
+        let offset = file.file_offset();
+        drop(file);
+        self.put_file_copy_buffer(buf);
+        Ok(offset)
     }
 
     /// Return a file offset usable with `add_hardlink`.
