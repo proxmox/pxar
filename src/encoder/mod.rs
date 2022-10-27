@@ -467,7 +467,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         let offset_bytes = (current_offset - target_offset.0).to_le_bytes();
         let target_bytes = target.as_os_str().as_bytes();
         let mut hardlink = Vec::with_capacity(offset_bytes.len() + target_bytes.len() + 1);
-        hardlink.extend(&offset_bytes);
+        hardlink.extend(offset_bytes);
         hardlink.extend(target_bytes);
         hardlink.push(0);
         let _this_offset: LinkOffset = self
