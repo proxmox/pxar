@@ -397,7 +397,18 @@ impl<I: SeqRead> DecoderImpl<I> {
                 match self.read_next_item_or_eof().await? {
                     Some(ItemResult::Entry) => break,
                     Some(ItemResult::Attribute) => continue,
-                    None if self.eof_after_entry => break,
+                    None if self.eof_after_entry => {
+                        // Single FIFOs and sockets (as received from the Accessor) won't reach a
+                        // FILENAME/GOODBYE entry:
+                        if self.entry.metadata.is_fifo() {
+                            self.entry.kind = EntryKind::Fifo;
+                        } else if self.entry.metadata.is_socket() {
+                            self.entry.kind = EntryKind::Socket;
+                        } else {
+                            self.entry.kind = EntryKind::Directory;
+                        }
+                        break;
+                    }
                     None => io_bail!("unexpected EOF in entry"),
                 }
             }
