@@ -371,8 +371,8 @@ impl From<Stat_V1> for Stat {
     }
 }
 
-#[derive(Clone, Debug, Default, Endian)]
-#[cfg_attr(feature = "test-harness", derive(Eq, PartialEq))]
+#[derive(Clone, Debug, Default, Endian, PartialEq)]
+#[cfg_attr(feature = "test-harness", derive(Eq))]
 #[repr(C)]
 pub struct Stat {
     pub mode: u64,
@@ -679,8 +679,8 @@ fn test_linux_devices() {
     assert_eq!(dev.to_dev_t(), c_dev);
 }
 
-#[derive(Clone, Debug)]
-#[cfg_attr(feature = "test-harness", derive(Eq, PartialEq))]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "test-harness", derive(Eq))]
 #[repr(C)]
 pub struct FCaps {
     pub data: Vec<u8>,

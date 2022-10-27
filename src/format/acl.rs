@@ -96,8 +96,8 @@ pub struct GroupObject {
     pub permissions: Permissions,
 }
 
-#[derive(Clone, Debug, Endian)]
-#[cfg_attr(feature = "test-harness", derive(Eq, PartialEq))]
+#[derive(Clone, Debug, Endian, PartialEq)]
+#[cfg_attr(feature = "test-harness", derive(Eq))]
 #[repr(C)]
 pub struct Default {
     pub user_obj_permissions: Permissions,
