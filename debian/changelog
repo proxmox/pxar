@@ -1,3 +1,15 @@
+rust-pxar (0.10.2-1) unstable; urgency=medium
+
+  * don't hold a temporary buffer mutex accross await point
+
+  * fix EntryKind for fifo and sockets in the random accessor
+
+  * derive PartialEq on various archive metadata structs
+
+  * clippy fixups
+
+ -- Proxmox Support Team <support@proxmox.com>  Thu, 27 Oct 2022 15:26:54 +0200
+
 rust-pxar (0.10.1-1) unstable; urgency=medium
 
   * add 'contents' and 'content_size' to aio decoder interface
