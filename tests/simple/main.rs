@@ -125,9 +125,10 @@ fn check_run_special_files(accessor: &accessor::Accessor<&[u8]>) {
         "expected first file in /run to be fifo0"
     );
 
-    let _entry = fifo0
+    let entry = fifo0
         .decode_entry()
         .expect("failed to decode entry for fifo0");
+    assert!(matches!(entry.kind(), PxarEntryKind::Fifo));
 
     let sock0 = rd
         .next()
@@ -139,7 +140,8 @@ fn check_run_special_files(accessor: &accessor::Accessor<&[u8]>) {
         "expected second file in /run to be sock0"
     );
 
-    let _entry = sock0
+    let entry = sock0
         .decode_entry()
         .expect("failed to decode entry for sock0");
+    assert!(matches!(entry.kind(), PxarEntryKind::Socket));
 }
