@@ -13,9 +13,10 @@ Build-Depends: debhelper (>= 12),
  librust-siphasher-0.3+default-dev <!nocheck>,
  librust-tokio-1-dev <!nocheck>
 Maintainer: Proxmox Support Team <support@proxmox.com>
-Standards-Version: 4.5.1
+Standards-Version: 4.6.1
 Vcs-Git: 
 Vcs-Browser: 
+X-Cargo-Crate: pxar
 Rules-Requires-Root: no
 
 Package: librust-pxar-dev
