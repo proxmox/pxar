@@ -5,6 +5,7 @@
 #![deny(missing_docs)]
 
 use std::ffi::OsString;
+use std::future::poll_fn;
 use std::io;
 use std::mem::{self, size_of, size_of_val, MaybeUninit};
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
@@ -17,7 +18,6 @@ use std::task::{Context, Poll};
 use endian_trait::Endian;
 
 use crate::format::{self, Header};
-use crate::poll_fn::poll_fn;
 use crate::util::{self, io_err_other};
 use crate::{Entry, EntryKind, Metadata};
 
