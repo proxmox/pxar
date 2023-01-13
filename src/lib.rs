@@ -15,8 +15,6 @@ pub mod format;
 
 pub(crate) mod util;
 
-mod poll_fn;
-
 pub mod accessor;
 pub mod binary_tree_array;
 pub mod decoder;

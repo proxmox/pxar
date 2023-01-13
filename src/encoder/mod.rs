@@ -4,6 +4,7 @@
 
 #![deny(missing_docs)]
 
+use std::future::poll_fn;
 use std::io;
 use std::mem::{forget, size_of, size_of_val, take};
 use std::os::unix::ffi::OsStrExt;
@@ -17,7 +18,6 @@ use endian_trait::Endian;
 use crate::binary_tree_array;
 use crate::decoder::{self, SeqRead};
 use crate::format::{self, GoodbyeItem};
-use crate::poll_fn::poll_fn;
 use crate::Metadata;
 
 pub mod aio;
