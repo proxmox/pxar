@@ -85,6 +85,7 @@ mod tok {
     }
 
     impl<T: tokio::io::AsyncRead> TokioReader<T> {
+        /// Create a new [TokioReader] from a type that implements [AsyncRead](tokio::io::AsyncRead).
         pub fn new(inner: T) -> Self {
             Self { inner }
         }
@@ -130,4 +131,4 @@ mod tok {
 }
 
 #[cfg(feature = "tokio-io")]
-use tok::TokioReader;
+pub use tok::TokioReader;
