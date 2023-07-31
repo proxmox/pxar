@@ -1,6 +1,6 @@
 rust-pxar (0.10.2-1) unstable; urgency=medium
 
-  * don't hold a temporary buffer mutex accross await point
+  * don't hold a temporary buffer mutex across await point
 
   * fix EntryKind for fifo and sockets in the random accessor
 
