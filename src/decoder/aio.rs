@@ -85,7 +85,7 @@ mod tok {
     }
 
     impl<T: tokio::io::AsyncRead> TokioReader<T> {
-        /// Create a new [TokioReader] from a type that implements [AsyncRead](tokio::io::AsyncRead).
+        /// Create a new [`TokioReader`] from a type that implements [`AsyncRead`](tokio::io::AsyncRead).
         pub fn new(inner: T) -> Self {
             Self { inner }
         }
