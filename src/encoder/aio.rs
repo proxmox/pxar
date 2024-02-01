@@ -7,7 +7,7 @@ use std::task::{Context, Poll};
 
 use crate::encoder::{self, LinkOffset, SeqWrite};
 use crate::format;
-use crate::Metadata;
+use crate::{Metadata, PxarVariant};
 
 /// Asynchronous `pxar` encoder.
 ///
@@ -22,10 +22,10 @@ impl<'a, T: tokio::io::AsyncWrite + 'a> Encoder<'a, TokioWriter<T>> {
     /// Encode a `pxar` archive into a `tokio::io::AsyncWrite` output.
     #[inline]
     pub async fn from_tokio(
-        output: T,
+        output: PxarVariant<T, T>,
         metadata: &Metadata,
     ) -> io::Result<Encoder<'a, TokioWriter<T>>> {
-        Encoder::new(TokioWriter::new(output), metadata).await
+        Encoder::new(output.wrap(|output| TokioWriter::new(output)), metadata).await
     }
 }
 
@@ -37,7 +37,9 @@ impl<'a> Encoder<'a, TokioWriter<tokio::fs::File>> {
         metadata: &'b Metadata,
     ) -> io::Result<Encoder<'a, TokioWriter<tokio::fs::File>>> {
         Encoder::new(
-            TokioWriter::new(tokio::fs::File::create(path.as_ref()).await?),
+            PxarVariant::Unified(TokioWriter::new(
+                tokio::fs::File::create(path.as_ref()).await?,
+            )),
             metadata,
         )
         .await
@@ -46,9 +48,10 @@ impl<'a> Encoder<'a, TokioWriter<tokio::fs::File>> {
 
 impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
     /// Create an asynchronous encoder for an output implementing our internal write interface.
-    pub async fn new(output: T, metadata: &Metadata) -> io::Result<Encoder<'a, T>> {
+    pub async fn new(output: PxarVariant<T, T>, metadata: &Metadata) -> io::Result<Encoder<'a, T>> {
+        let output = output.wrap_multi(|output| output.into(), |payload_output| payload_output);
         Ok(Self {
-            inner: encoder::EncoderImpl::new(output.into(), metadata).await?,
+            inner: encoder::EncoderImpl::new(output, metadata).await?,
         })
     }
 
@@ -294,9 +297,12 @@ mod test {
     /// Assert that `Encoder` is `Send`
     fn send_test() {
         let test = async {
-            let mut encoder = Encoder::new(DummyOutput, &Metadata::dir_builder(0o700).build())
-                .await
-                .unwrap();
+            let mut encoder = Encoder::new(
+                crate::PxarVariant::Unified(DummyOutput),
+                &Metadata::dir_builder(0o700).build(),
+            )
+            .await
+            .unwrap();
             {
                 encoder
                     .create_directory("baba", &Metadata::dir_builder(0o700).build())
