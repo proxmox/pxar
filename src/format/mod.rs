@@ -22,6 +22,7 @@
 //!   * `FCAPS`             -- file capability in Linux disk format
 //!   * `QUOTA_PROJECT_ID`  -- the ext4/xfs quota project ID
 //!   * `PAYLOAD`           -- file contents, if it is one
+//!   * `PAYLOAD_REF`       -- reference to file offset in optional payload file (introduced in v2)
 //!   * `SYMLINK`           -- symlink target, if it is one
 //!   * `DEVICE`            -- device major/minor, if it is a block/char device
 //!
@@ -99,6 +100,8 @@ pub const PXAR_QUOTA_PROJID: u64 = 0xe07540e82f7d1cbb;
 pub const PXAR_HARDLINK: u64 = 0x51269c8422bd7275;
 /// Marks the beginning of the payload (actual content) of regular files
 pub const PXAR_PAYLOAD: u64 = 0x28147a1b0b7c1a25;
+/// Marks the beginning of a payload reference for regular files
+pub const PXAR_PAYLOAD_REF: u64 = 0x419d3d6bc4ba977e;
 /// Marks item as entry of goodbye table
 pub const PXAR_GOODBYE: u64 = 0x2fec4fa642d5731d;
 /// The end marker used in the GOODBYE object
@@ -152,6 +155,7 @@ impl Header {
             PXAR_QUOTA_PROJID => size_of::<QuotaProjectId>() as u64,
             PXAR_ENTRY => size_of::<Stat>() as u64,
             PXAR_PAYLOAD | PXAR_GOODBYE => u64::MAX - (size_of::<Self>() as u64),
+            PXAR_PAYLOAD_REF => size_of::<PayloadRef>() as u64,
             _ => u64::MAX - (size_of::<Self>() as u64),
         }
     }
@@ -192,6 +196,7 @@ impl Display for Header {
             PXAR_QUOTA_PROJID => "QUOTA_PROJID",
             PXAR_ENTRY => "ENTRY",
             PXAR_PAYLOAD => "PAYLOAD",
+            PXAR_PAYLOAD_REF => "PAYLOAD_REF",
             PXAR_GOODBYE => "GOODBYE",
             _ => "UNKNOWN",
         };
@@ -720,6 +725,21 @@ impl GoodbyeItem {
     pub fn new(name: &[u8], offset: u64, size: u64) -> Self {
         let hash = hash_filename(name);
         Self { hash, offset, size }
+    }
+}
+
+/// References a regular file payload found in a separated payload archive
+#[derive(Clone, Debug, Endian)]
+pub struct PayloadRef {
+    pub offset: u64,
+    pub size: u64,
+}
+
+impl PayloadRef {
+    pub(crate) fn data(&self) -> Vec<u8> {
+        let mut data = self.offset.to_le_bytes().to_vec();
+        data.append(&mut self.size.to_le_bytes().to_vec());
+        data
     }
 }
 

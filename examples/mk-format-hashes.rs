@@ -42,6 +42,11 @@ const CONSTANTS: &[(&str, &str, &str)] = &[
         "__PROXMOX_FORMAT_PXAR_PAYLOAD__",
     ),
     (
+        "Marks the beginning of a payload reference for regular files",
+        "PXAR_PAYLOAD_REF",
+        "__PROXMOX_FORMAT_PXAR_PAYLOAD_REF__",
+    ),
+    (
         "Marks item as entry of goodbye table",
         "PXAR_GOODBYE",
         "__PROXMOX_FORMAT_GOODBYE__",
