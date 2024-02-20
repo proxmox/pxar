@@ -564,6 +564,12 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         Ok(this_offset)
     }
 
+    /// Add size to payload stream
+    pub fn advance(&mut self, size: PayloadOffset) -> io::Result<()> {
+        self.state_mut()?.payload_write_position += size.raw();
+        Ok(())
+    }
+
     /// Return a file offset usable with `add_hardlink`.
     pub async fn add_symlink(
         &mut self,

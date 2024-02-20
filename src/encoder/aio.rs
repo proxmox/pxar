@@ -116,6 +116,11 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
             .await
     }
 
+    /// Add size to payload stream
+    pub fn advance(&mut self, size: PayloadOffset) -> io::Result<()> {
+        self.inner.advance(size)
+    }
+
     /// Create a new subdirectory. Note that the subdirectory has to be finished by calling the
     /// `finish()` method, otherwise the entire archive will be in an error state.
     pub async fn create_directory<P: AsRef<Path>>(
