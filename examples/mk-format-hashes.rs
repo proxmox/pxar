@@ -56,6 +56,11 @@ const CONSTANTS: &[(&str, &str, &str)] = &[
         "PXAR_GOODBYE_TAIL_MARKER",
         "__PROXMOX_FORMAT_PXAR_GOODBYE_TAIL_MARKER__",
     ),
+    (
+        "The end marker used in the separate payload stream",
+        "PXAR_PAYLOAD_TAIL_MARKER",
+        "__PROXMOX_FORMAT_PXAR_PAYLOAD_TAIL_MARKER__",
+    ),
 ];
 
 fn main() {

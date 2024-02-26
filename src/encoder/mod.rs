@@ -900,6 +900,14 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         }
 
         if let Some(output) = self.output.payload_mut() {
+            let mut dummy_writer = 0;
+            seq_write_pxar_entry(
+                output,
+                format::PXAR_PAYLOAD_TAIL_MARKER,
+                &[],
+                &mut dummy_writer,
+            )
+            .await?;
             flush(output).await?;
         }
 

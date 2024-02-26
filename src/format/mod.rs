@@ -106,6 +106,8 @@ pub const PXAR_PAYLOAD_REF: u64 = 0x419d3d6bc4ba977e;
 pub const PXAR_GOODBYE: u64 = 0x2fec4fa642d5731d;
 /// The end marker used in the GOODBYE object
 pub const PXAR_GOODBYE_TAIL_MARKER: u64 = 0xef5eed5b753e1555;
+/// The end marker used in the separate payload stream
+pub const PXAR_PAYLOAD_TAIL_MARKER: u64 = 0x6c72b78b984c81b5;
 
 #[derive(Debug, Endian)]
 #[repr(C)]
@@ -156,6 +158,7 @@ impl Header {
             PXAR_ENTRY => size_of::<Stat>() as u64,
             PXAR_PAYLOAD | PXAR_GOODBYE => u64::MAX - (size_of::<Self>() as u64),
             PXAR_PAYLOAD_REF => size_of::<PayloadRef>() as u64,
+            PXAR_PAYLOAD_TAIL_MARKER => size_of::<Header>() as u64,
             _ => u64::MAX - (size_of::<Self>() as u64),
         }
     }
@@ -197,6 +200,7 @@ impl Display for Header {
             PXAR_ENTRY => "ENTRY",
             PXAR_PAYLOAD => "PAYLOAD",
             PXAR_PAYLOAD_REF => "PAYLOAD_REF",
+            PXAR_PAYLOAD_TAIL_MARKER => "PXAR_PAYLOAD_TAIL_MARKER",
             PXAR_GOODBYE => "GOODBYE",
             _ => "UNKNOWN",
         };
