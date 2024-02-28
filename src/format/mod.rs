@@ -97,7 +97,7 @@ pub const PXAR_FCAPS: u64 = 0x2da9dd9db5f7fb67;
 pub const PXAR_QUOTA_PROJID: u64 = 0xe07540e82f7d1cbb;
 /// Marks item as hardlink
 pub const PXAR_HARDLINK: u64 = 0x51269c8422bd7275;
-/// Marks the beginnig of the payload (actual content) of regular files
+/// Marks the beginning of the payload (actual content) of regular files
 pub const PXAR_PAYLOAD: u64 = 0x28147a1b0b7c1a25;
 /// Marks item as entry of goodbye table
 pub const PXAR_GOODBYE: u64 = 0x2fec4fa642d5731d;
