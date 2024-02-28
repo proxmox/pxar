@@ -37,7 +37,7 @@ const CONSTANTS: &[(&str, &str, &str)] = &[
         "__PROXMOX_FORMAT_HARDLINK__",
     ),
     (
-        "Marks the beginnig of the payload (actual content) of regular files",
+        "Marks the beginning of the payload (actual content) of regular files",
         "PXAR_PAYLOAD",
         "__PROXMOX_FORMAT_PXAR_PAYLOAD__",
     ),
