@@ -563,15 +563,18 @@ impl<I: SeqRead> DecoderImpl<I> {
     //
 
     async fn skip_entry(&mut self, offset: u64) -> io::Result<()> {
-        let mut len = self.current_header.content_size() - offset;
+        let len = (self.current_header.content_size() - offset) as usize;
+        Self::skip(&mut self.input, len).await
+    }
+
+    async fn skip(input: &mut I, mut len: usize) -> io::Result<()> {
         let scratch = scratch_buffer();
-        while len >= (scratch.len() as u64) {
-            seq_read_exact(&mut self.input, scratch).await?;
-            len -= scratch.len() as u64;
+        while len >= (scratch.len()) {
+            seq_read_exact(input, scratch).await?;
+            len -= scratch.len();
         }
-        let len = len as usize;
         if len > 0 {
-            seq_read_exact(&mut self.input, &mut scratch[..len]).await?;
+            seq_read_exact(input, &mut scratch[..len]).await?;
         }
         Ok(())
     }
