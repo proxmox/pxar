@@ -664,6 +664,11 @@ impl<I: SeqRead> DecoderImpl<I> {
     async fn read_quota_project_id(&mut self) -> io::Result<format::QuotaProjectId> {
         self.read_simple_entry("quota project id").await
     }
+
+    async fn read_payload_ref(&mut self) -> io::Result<format::PayloadRef> {
+        self.current_header.check_header_size()?;
+        seq_read_entry(&mut self.input).await
+    }
 }
 
 /// Reader for file contents inside a pxar archive.
