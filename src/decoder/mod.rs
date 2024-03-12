@@ -19,7 +19,7 @@ use endian_trait::Endian;
 
 use crate::format::{self, Header};
 use crate::util::{self, io_err_other};
-use crate::{Entry, EntryKind, Metadata};
+use crate::{Entry, EntryKind, Metadata, PxarVariant};
 
 pub mod aio;
 pub mod sync;
@@ -150,12 +150,15 @@ async fn seq_read_entry<T: SeqRead + ?Sized, E: Endian>(input: &mut T) -> io::Re
 /// We use `async fn` to implement the decoder state machine so that we can easily plug in both
 /// synchronous or `async` I/O objects in as input.
 pub(crate) struct DecoderImpl<T> {
-    pub(crate) input: T,
+    // Payload of regular files might be provided by a different reader
+    pub(crate) input: PxarVariant<T, T>,
     current_header: Header,
     entry: Entry,
     path_lengths: Vec<usize>,
     state: State,
     with_goodbye_tables: bool,
+
+    payload_consumed: u64,
 
     /// The random access code uses decoders for sub-ranges which may not end in a `PAYLOAD` for
     /// entries like FIFOs or sockets, so there we explicitly allow an item to terminate with EOF.
@@ -167,6 +170,7 @@ enum State {
     Default,
     InPayload {
         offset: u64,
+        size: u64,
     },
 
     /// file entries with no data (fifo, socket)
@@ -195,16 +199,16 @@ pub(crate) enum ItemResult {
 }
 
 impl<I: SeqRead> DecoderImpl<I> {
-    pub async fn new(input: I) -> io::Result<Self> {
+    pub async fn new(input: PxarVariant<I, I>) -> io::Result<Self> {
         Self::new_full(input, "/".into(), false).await
     }
 
     pub(crate) fn input(&self) -> &I {
-        &self.input
+        self.input.archive()
     }
 
     pub(crate) async fn new_full(
-        input: I,
+        input: PxarVariant<I, I>,
         path: PathBuf,
         eof_after_entry: bool,
     ) -> io::Result<Self> {
@@ -219,6 +223,7 @@ impl<I: SeqRead> DecoderImpl<I> {
             path_lengths: Vec::new(),
             state: State::Begin,
             with_goodbye_tables: false,
+            payload_consumed: 0,
             eof_after_entry,
         };
 
@@ -242,9 +247,14 @@ impl<I: SeqRead> DecoderImpl<I> {
                     // hierarchy and parse the next PXAR_FILENAME or the PXAR_GOODBYE:
                     self.read_next_item().await?;
                 }
-                State::InPayload { offset } => {
-                    // We need to skip the current payload first.
-                    self.skip_entry(offset).await?;
+                State::InPayload { offset, .. } => {
+                    if self.input.payload().is_some() {
+                        // Update consumed payload as given by the offset referenced by the content reader
+                        self.payload_consumed += offset;
+                    } else {
+                        // Skip remaining payload of current entry in regular stream
+                        self.skip_entry(offset).await?;
+                    }
                     self.read_next_item().await?;
                 }
                 State::InGoodbyeTable => {
@@ -300,20 +310,28 @@ impl<I: SeqRead> DecoderImpl<I> {
     }
 
     pub fn content_size(&self) -> Option<u64> {
-        if let State::InPayload { .. } = self.state {
-            Some(self.current_header.content_size())
+        if let State::InPayload { size, .. } = self.state {
+            if self.input.payload().is_some() {
+                Some(size)
+            } else {
+                Some(self.current_header.content_size())
+            }
         } else {
             None
         }
     }
 
     pub fn content_reader(&mut self) -> Option<Contents<I>> {
-        if let State::InPayload { offset } = &mut self.state {
-            Some(Contents::new(
-                &mut self.input,
-                offset,
-                self.current_header.content_size(),
-            ))
+        if let State::InPayload { offset, size } = &mut self.state {
+            if self.input.payload().is_some() {
+                Some(Contents::new(
+                    self.input.payload_mut().unwrap(),
+                    offset,
+                    *size,
+                ))
+            } else {
+                Some(Contents::new(self.input.archive_mut(), offset, *size))
+            }
         } else {
             None
         }
@@ -357,7 +375,7 @@ impl<I: SeqRead> DecoderImpl<I> {
         self.state = State::Default;
         self.entry.clear_data();
 
-        let header: Header = match seq_read_entry_or_eof(&mut self.input).await? {
+        let header: Header = match seq_read_entry_or_eof(self.input.archive_mut()).await? {
             None => return Ok(None),
             Some(header) => header,
         };
@@ -377,11 +395,11 @@ impl<I: SeqRead> DecoderImpl<I> {
         } else if header.htype == format::PXAR_ENTRY || header.htype == format::PXAR_ENTRY_V1 {
             if header.htype == format::PXAR_ENTRY {
                 self.entry.metadata = Metadata {
-                    stat: seq_read_entry(&mut self.input).await?,
+                    stat: seq_read_entry(self.input.archive_mut()).await?,
                     ..Default::default()
                 };
             } else if header.htype == format::PXAR_ENTRY_V1 {
-                let stat: format::Stat_V1 = seq_read_entry(&mut self.input).await?;
+                let stat: format::Stat_V1 = seq_read_entry(self.input.archive_mut()).await?;
 
                 self.entry.metadata = Metadata {
                     stat: stat.into(),
@@ -457,7 +475,7 @@ impl<I: SeqRead> DecoderImpl<I> {
             )
         };
 
-        match seq_read_exact_or_eof(&mut self.input, dest).await? {
+        match seq_read_exact_or_eof(self.input.archive_mut(), dest).await? {
             Some(()) => {
                 self.current_header.check_header_size()?;
                 Ok(Some(()))
@@ -527,12 +545,71 @@ impl<I: SeqRead> DecoderImpl<I> {
                 return Ok(ItemResult::Entry);
             }
             format::PXAR_PAYLOAD => {
-                let offset = seq_read_position(&mut self.input).await.transpose()?;
+                let offset = seq_read_position(self.input.archive_mut())
+                    .await
+                    .transpose()?;
                 self.entry.kind = EntryKind::File {
                     size: self.current_header.content_size(),
                     offset,
+                    payload_offset: None,
                 };
-                self.state = State::InPayload { offset: 0 };
+                self.state = State::InPayload {
+                    offset: 0,
+                    size: self.current_header.content_size(),
+                };
+                return Ok(ItemResult::Entry);
+            }
+            format::PXAR_PAYLOAD_REF => {
+                let offset = seq_read_position(self.input.archive_mut())
+                    .await
+                    .transpose()?;
+                let payload_ref = self.read_payload_ref().await?;
+
+                if let Some(payload_input) = self.input.payload_mut() {
+                    if seq_read_position(payload_input)
+                        .await
+                        .transpose()?
+                        .is_none()
+                    {
+                        if self.payload_consumed > payload_ref.offset {
+                            io_bail!(
+                                "unexpected offset {}, smaller than already consumed payload {}",
+                                payload_ref.offset,
+                                self.payload_consumed,
+                            );
+                        }
+                        let to_skip = payload_ref.offset - self.payload_consumed;
+                        Self::skip(payload_input, to_skip as usize).await?;
+                        self.payload_consumed += to_skip;
+                    }
+
+                    let header: Header = seq_read_entry(payload_input).await?;
+                    if header.htype != format::PXAR_PAYLOAD {
+                        io_bail!(
+                            "unexpected header in payload input: expected {} , got {header}",
+                            format::PXAR_PAYLOAD,
+                        );
+                    }
+                    self.payload_consumed += size_of::<Header>() as u64;
+
+                    if header.content_size() != payload_ref.size {
+                        io_bail!(
+                            "encountered payload size mismatch: got {}, expected {}",
+                            payload_ref.size,
+                            header.content_size(),
+                        );
+                    }
+                }
+
+                self.entry.kind = EntryKind::File {
+                    size: payload_ref.size,
+                    offset,
+                    payload_offset: Some(payload_ref.offset),
+                };
+                self.state = State::InPayload {
+                    offset: 0,
+                    size: payload_ref.size,
+                };
                 return Ok(ItemResult::Entry);
             }
             format::PXAR_FILENAME | format::PXAR_GOODBYE => {
@@ -564,7 +641,7 @@ impl<I: SeqRead> DecoderImpl<I> {
 
     async fn skip_entry(&mut self, offset: u64) -> io::Result<()> {
         let len = (self.current_header.content_size() - offset) as usize;
-        Self::skip(&mut self.input, len).await
+        Self::skip(self.input.archive_mut(), len).await
     }
 
     async fn skip(input: &mut I, mut len: usize) -> io::Result<()> {
@@ -581,7 +658,7 @@ impl<I: SeqRead> DecoderImpl<I> {
 
     async fn read_entry_as_bytes(&mut self) -> io::Result<Vec<u8>> {
         let size = usize::try_from(self.current_header.content_size()).map_err(io_err_other)?;
-        let data = seq_read_exact_data(&mut self.input, size).await?;
+        let data = seq_read_exact_data(self.input.archive_mut(), size).await?;
         Ok(data)
     }
 
@@ -598,7 +675,7 @@ impl<I: SeqRead> DecoderImpl<I> {
                 size_of::<T>(),
             );
         }
-        seq_read_entry(&mut self.input).await
+        seq_read_entry(self.input.archive_mut()).await
     }
 
     //
@@ -630,8 +707,8 @@ impl<I: SeqRead> DecoderImpl<I> {
         }
         let data_size = content_size - size_of::<u64>();
 
-        let offset: u64 = seq_read_entry(&mut self.input).await?;
-        let data = seq_read_exact_data(&mut self.input, data_size).await?;
+        let offset: u64 = seq_read_entry(self.input.archive_mut()).await?;
+        let data = seq_read_exact_data(self.input.archive_mut(), data_size).await?;
 
         Ok(format::Hardlink { offset, data })
     }
@@ -667,7 +744,7 @@ impl<I: SeqRead> DecoderImpl<I> {
 
     async fn read_payload_ref(&mut self) -> io::Result<format::PayloadRef> {
         self.current_header.check_header_size()?;
-        seq_read_entry(&mut self.input).await
+        seq_read_entry(self.input.archive_mut()).await
     }
 }
 

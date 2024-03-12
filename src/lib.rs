@@ -364,6 +364,9 @@ pub enum EntryKind {
 
         /// The file's byte offset inside the archive, if available.
         offset: Option<u64>,
+
+        /// The file's byte offset inside the payload stream, if available.
+        payload_offset: Option<u64>,
     },
 
     /// Directory entry. When iterating through an archive, the contents follow next.

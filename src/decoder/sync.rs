@@ -7,7 +7,7 @@ use std::task::{Context, Poll};
 
 use crate::decoder::{self, SeqRead};
 use crate::util::poll_result_once;
-use crate::Entry;
+use crate::{Entry, PxarVariant};
 
 /// Blocking `pxar` decoder.
 ///
@@ -25,8 +25,8 @@ pub struct Decoder<T> {
 impl<T: io::Read> Decoder<StandardReader<T>> {
     /// Decode a `pxar` archive from a regular `std::io::Read` input.
     #[inline]
-    pub fn from_std(input: T) -> io::Result<Self> {
-        Decoder::new(StandardReader::new(input))
+    pub fn from_std(input: PxarVariant<T, T>) -> io::Result<Self> {
+        Decoder::new(input.wrap(|i| StandardReader::new(i)))
     }
 
     /// Get a direct reference to the reader contained inside the contained [`StandardReader`].
@@ -37,8 +37,15 @@ impl<T: io::Read> Decoder<StandardReader<T>> {
 
 impl Decoder<StandardReader<std::fs::File>> {
     /// Convenience shortcut for `File::open` followed by `Accessor::from_file`.
-    pub fn open<P: AsRef<Path>>(path: P) -> io::Result<Self> {
-        Self::from_std(std::fs::File::open(path.as_ref())?)
+    pub fn open<P: AsRef<Path>>(path: PxarVariant<P, P>) -> io::Result<Self> {
+        let input = match path {
+            PxarVariant::Split(input, payload_input) => PxarVariant::Split(
+                std::fs::File::open(input)?,
+                std::fs::File::open(payload_input)?,
+            ),
+            PxarVariant::Unified(input) => PxarVariant::Unified(std::fs::File::open(input)?),
+        };
+        Self::from_std(input)
     }
 }
 
@@ -47,7 +54,9 @@ impl<T: SeqRead> Decoder<T> {
     ///
     /// Note that the `input`'s `SeqRead` implementation must always return `Poll::Ready` and is
     /// not allowed to use the `Waker`, as this will cause a `panic!`.
-    pub fn new(input: T) -> io::Result<Self> {
+    /// The optional payload input must be used to restore regular file payloads for payload references
+    /// encountered within the archive.
+    pub fn new(input: PxarVariant<T, T>) -> io::Result<Self> {
         Ok(Self {
             inner: poll_result_once(decoder::DecoderImpl::new(input))?,
         })

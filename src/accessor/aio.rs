@@ -18,7 +18,7 @@ use crate::accessor::{self, cache::Cache, MaybeReady, ReadAt, ReadAtOperation};
 use crate::decoder::aio::Decoder;
 use crate::format::GoodbyeItem;
 use crate::util;
-use crate::Entry;
+use crate::{Entry, PxarVariant};
 
 use super::sync::{FileReader, FileRefReader};
 
@@ -39,7 +39,7 @@ impl<T: FileExt> Accessor<FileReader<T>> {
     /// by a blocking file.
     #[inline]
     pub async fn from_file_and_size(input: T, size: u64) -> io::Result<Self> {
-        Accessor::new(FileReader::new(input), size).await
+        Accessor::new(PxarVariant::Unified(FileReader::new(input)), size).await
     }
 }
 
@@ -75,7 +75,7 @@ where
         input: T,
         size: u64,
     ) -> io::Result<Accessor<FileRefReader<T>>> {
-        Accessor::new(FileRefReader::new(input), size).await
+        Accessor::new(PxarVariant::Unified(FileRefReader::new(input)), size).await
     }
 }
 
@@ -85,7 +85,9 @@ impl<T: ReadAt> Accessor<T> {
     ///
     /// Note that the `input`'s `SeqRead` implementation must always return `Poll::Ready` and is
     /// not allowed to use the `Waker`, as this will cause a `panic!`.
-    pub async fn new(input: T, size: u64) -> io::Result<Self> {
+    /// Optionally take the file payloads from the provided input stream rather than the regular
+    /// pxar stream.
+    pub async fn new(input: PxarVariant<T, (T, u64)>, size: u64) -> io::Result<Self> {
         Ok(Self {
             inner: accessor::AccessorImpl::new(input, size).await?,
         })

@@ -61,14 +61,16 @@ fn test1() {
     // std::fs::write("myarchive.pxar", &file).expect("failed to write out test archive");
 
     let mut input = &file[..];
-    let mut decoder = decoder::Decoder::from_std(&mut input).expect("failed to create decoder");
+    let mut decoder = decoder::Decoder::from_std(pxar::PxarVariant::Unified(&mut input))
+        .expect("failed to create decoder");
     let decoded_fs =
         fs::Entry::decode_from(&mut decoder).expect("failed to decode previously encoded archive");
 
     assert_eq!(test_fs, decoded_fs);
 
-    let accessor = accessor::Accessor::new(&file[..], file.len() as u64)
-        .expect("failed to create random access reader for encoded archive");
+    let accessor =
+        accessor::Accessor::new(pxar::PxarVariant::Unified(&file[..]), file.len() as u64)
+            .expect("failed to create random access reader for encoded archive");
 
     check_bunzip2(&accessor);
     check_run_special_files(&accessor);

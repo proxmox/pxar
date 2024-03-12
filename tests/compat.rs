@@ -94,7 +94,8 @@ fn create_archive() -> io::Result<Vec<u8>> {
 fn test_archive() {
     let archive = create_archive().expect("failed to create test archive");
     let mut input = &archive[..];
-    let mut decoder = decoder::Decoder::from_std(&mut input).expect("failed to create decoder");
+    let mut decoder = decoder::Decoder::from_std(pxar::PxarVariant::Unified(&mut input))
+        .expect("failed to create decoder");
 
     let item = decoder
         .next()

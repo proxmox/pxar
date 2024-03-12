@@ -12,7 +12,7 @@ use crate::accessor::{self, cache::Cache, MaybeReady, ReadAt, ReadAtOperation};
 use crate::decoder::Decoder;
 use crate::format::GoodbyeItem;
 use crate::util::poll_result_once;
-use crate::Entry;
+use crate::{Entry, PxarVariant};
 
 /// Blocking `pxar` random-access decoder.
 ///
@@ -31,7 +31,7 @@ impl<T: FileExt> Accessor<FileReader<T>> {
     /// Decode a `pxar` archive from a standard file implementing `FileExt`.
     #[inline]
     pub fn from_file_and_size(input: T, size: u64) -> io::Result<Self> {
-        Accessor::new(FileReader::new(input), size)
+        Accessor::new(PxarVariant::Unified(FileReader::new(input)), size)
     }
 }
 
@@ -64,7 +64,7 @@ where
 {
     /// Open an `Arc` or `Rc` of `File`.
     pub fn from_file_ref_and_size(input: T, size: u64) -> io::Result<Accessor<FileRefReader<T>>> {
-        Accessor::new(FileRefReader::new(input), size)
+        Accessor::new(PxarVariant::Unified(FileRefReader::new(input)), size)
     }
 }
 
@@ -74,7 +74,7 @@ impl<T: ReadAt> Accessor<T> {
     ///
     /// Note that the `input`'s `SeqRead` implementation must always return `Poll::Ready` and is
     /// not allowed to use the `Waker`, as this will cause a `panic!`.
-    pub fn new(input: T, size: u64) -> io::Result<Self> {
+    pub fn new(input: PxarVariant<T, (T, u64)>, size: u64) -> io::Result<Self> {
         Ok(Self {
             inner: poll_result_once(accessor::AccessorImpl::new(input, size))?,
         })

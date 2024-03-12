@@ -9,7 +9,7 @@ async fn main() {
         .await
         .expect("failed to open file");
 
-    let mut reader = Decoder::from_tokio(file)
+    let mut reader = Decoder::from_tokio(pxar::PxarVariant::Unified(file))
         .await
         .expect("failed to open pxar archive contents");
 

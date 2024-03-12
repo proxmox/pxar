@@ -19,7 +19,7 @@ use crate::binary_tree_array;
 use crate::decoder::{self, DecoderImpl};
 use crate::format::{self, GoodbyeItem};
 use crate::util;
-use crate::{Entry, EntryKind};
+use crate::{Entry, EntryKind, PxarVariant};
 
 pub mod aio;
 pub mod cache;
@@ -179,16 +179,21 @@ struct Caches {
 
 /// The random access state machine implementation.
 pub(crate) struct AccessorImpl<T> {
-    input: T,
+    input: PxarVariant<T, (T, Range<u64>)>,
     size: u64,
     caches: Arc<Caches>,
 }
 
 impl<T: ReadAt> AccessorImpl<T> {
-    pub async fn new(input: T, size: u64) -> io::Result<Self> {
+    pub async fn new(input: PxarVariant<T, (T, u64)>, size: u64) -> io::Result<Self> {
         if size < (size_of::<GoodbyeItem>() as u64) {
             io_bail!("too small to contain a pxar archive");
         }
+
+        let input = input.wrap_multi(
+            |input| input,
+            |(payload_input, size)| (payload_input, 0..size),
+        );
 
         Ok(Self {
             input,
@@ -202,13 +207,14 @@ impl<T: ReadAt> AccessorImpl<T> {
     }
 
     pub async fn open_root_ref(&self) -> io::Result<DirectoryImpl<&dyn ReadAt>> {
-        DirectoryImpl::open_at_end(
-            &self.input as &dyn ReadAt,
-            self.size,
-            "/".into(),
-            Arc::clone(&self.caches),
-        )
-        .await
+        let input = match &self.input {
+            PxarVariant::Unified(input) => PxarVariant::Unified(input as &dyn ReadAt),
+            PxarVariant::Split(input, (payload_input, range)) => PxarVariant::Split(
+                input as &dyn ReadAt,
+                (payload_input as &dyn ReadAt, range.clone()),
+            ),
+        };
+        DirectoryImpl::open_at_end(input, self.size, "/".into(), Arc::clone(&self.caches)).await
     }
 
     pub fn set_goodbye_table_cache(
@@ -224,21 +230,25 @@ impl<T: ReadAt> AccessorImpl<T> {
 }
 
 async fn get_decoder<T: ReadAt>(
-    input: T,
+    input: PxarVariant<T, (T, Range<u64>)>,
     entry_range: Range<u64>,
     path: PathBuf,
 ) -> io::Result<DecoderImpl<SeqReadAtAdapter<T>>> {
-    DecoderImpl::new_full(SeqReadAtAdapter::new(input, entry_range), path, true).await
+    let input = input.wrap_multi(
+        |input| SeqReadAtAdapter::new(input, entry_range.clone()),
+        |(payload_input, range)| SeqReadAtAdapter::new(payload_input, range),
+    );
+    DecoderImpl::new_full(input, path, true).await
 }
 
 // NOTE: This performs the Decoder::read_next_item() behavior! Keep in mind when changing!
 async fn get_decoder_at_filename<T: ReadAt>(
-    input: T,
+    input: PxarVariant<T, (T, Range<u64>)>,
     entry_range: Range<u64>,
     path: PathBuf,
 ) -> io::Result<(DecoderImpl<SeqReadAtAdapter<T>>, u64)> {
     // Read the header, it should be a FILENAME, then skip over it and its length:
-    let header: format::Header = read_entry_at(&input, entry_range.start).await?;
+    let header: format::Header = read_entry_at(input.archive(), entry_range.start).await?;
     header.check_header_size()?;
 
     if header.htype != format::PXAR_FILENAME {
@@ -293,6 +303,7 @@ impl<T: Clone + ReadAt> AccessorImpl<T> {
             .next()
             .await
             .ok_or_else(|| io_format_err!("unexpected EOF while decoding file entry"))??;
+
         Ok(FileEntryImpl {
             input: self.input.clone(),
             entry,
@@ -303,7 +314,11 @@ impl<T: Clone + ReadAt> AccessorImpl<T> {
 
     /// Allow opening arbitrary contents from a specific range.
     pub unsafe fn open_contents_at_range(&self, range: Range<u64>) -> FileContentsImpl<T> {
-        FileContentsImpl::new(self.input.clone(), range)
+        if let Some((payload_input, _)) = &self.input.payload() {
+            FileContentsImpl::new(payload_input.clone(), range)
+        } else {
+            FileContentsImpl::new(self.input.archive().clone(), range)
+        }
     }
 
     /// Following a hardlink breaks a couple of conventions we otherwise have, particularly we will
@@ -342,6 +357,7 @@ impl<T: Clone + ReadAt> AccessorImpl<T> {
             EntryKind::File {
                 offset: Some(offset),
                 size,
+                ..
             } => {
                 let meta_size = offset - link_offset;
                 let entry_end = link_offset + meta_size + size;
@@ -362,7 +378,7 @@ impl<T: Clone + ReadAt> AccessorImpl<T> {
 
 /// The directory random-access state machine implementation.
 pub(crate) struct DirectoryImpl<T> {
-    input: T,
+    input: PxarVariant<T, (T, Range<u64>)>,
     entry_ofs: u64,
     goodbye_ofs: u64,
     size: u64,
@@ -374,12 +390,12 @@ pub(crate) struct DirectoryImpl<T> {
 impl<T: Clone + ReadAt> DirectoryImpl<T> {
     /// Open a directory ending at the specified position.
     async fn open_at_end(
-        input: T,
+        input: PxarVariant<T, (T, Range<u64>)>,
         end_offset: u64,
         path: PathBuf,
         caches: Arc<Caches>,
     ) -> io::Result<DirectoryImpl<T>> {
-        let tail = Self::read_tail_entry(&input, end_offset).await?;
+        let tail = Self::read_tail_entry(input.archive(), end_offset).await?;
 
         if end_offset < tail.size {
             io_bail!("goodbye tail size out of range");
@@ -434,7 +450,7 @@ impl<T: Clone + ReadAt> DirectoryImpl<T> {
                 data.as_mut_ptr() as *mut u8,
                 len * size_of::<GoodbyeItem>(),
             );
-            read_exact_at(&self.input, slice, self.table_offset()).await?;
+            read_exact_at(self.input.archive(), slice, self.table_offset()).await?;
         }
         Ok(Arc::from(data))
     }
@@ -599,7 +615,8 @@ impl<T: Clone + ReadAt> DirectoryImpl<T> {
 
             let cursor = self.get_cursor(index).await?;
             if cursor.file_name == path {
-                return Ok(Some(cursor.decode_entry().await?));
+                let entry = cursor.decode_entry().await?;
+                return Ok(Some(entry));
             }
 
             dup += 1;
@@ -645,13 +662,13 @@ impl<T: Clone + ReadAt> DirectoryImpl<T> {
     }
 
     async fn read_filename_entry(&self, file_ofs: u64) -> io::Result<(PathBuf, u64)> {
-        let head: format::Header = read_entry_at(&self.input, file_ofs).await?;
+        let head: format::Header = read_entry_at(self.input.archive(), file_ofs).await?;
         if head.htype != format::PXAR_FILENAME {
             io_bail!("expected PXAR_FILENAME header, found: {}", head);
         }
 
         let mut path = read_exact_data_at(
-            &self.input,
+            self.input.archive(),
             head.content_size() as usize,
             file_ofs + (size_of_val(&head) as u64),
         )
@@ -681,7 +698,7 @@ impl<T: Clone + ReadAt> DirectoryImpl<T> {
 /// A file entry retrieved from a Directory.
 #[derive(Clone)]
 pub(crate) struct FileEntryImpl<T: Clone + ReadAt> {
-    input: T,
+    input: PxarVariant<T, (T, Range<u64>)>,
     entry: Entry,
     entry_range_info: EntryRangeInfo,
     caches: Arc<Caches>,
@@ -711,15 +728,29 @@ impl<T: Clone + ReadAt> FileEntryImpl<T> {
             EntryKind::File {
                 size,
                 offset: Some(offset),
+                payload_offset: None,
             } => Ok(Some(offset..(offset + size))),
+            // Payload offset beats regular offset if some
+            EntryKind::File {
+                size,
+                offset: Some(_offset),
+                payload_offset: Some(payload_offset),
+            } => {
+                let start_offset = payload_offset + size_of::<format::Header>() as u64;
+                Ok(Some(start_offset..start_offset + size))
+            }
             _ => Ok(None),
         }
     }
 
     pub async fn contents(&self) -> io::Result<FileContentsImpl<T>> {
-        match self.content_range()? {
-            Some(range) => Ok(FileContentsImpl::new(self.input.clone(), range)),
-            None => io_bail!("not a file"),
+        let range = self
+            .content_range()?
+            .ok_or_else(|| io_format_err!("not a file"))?;
+        if let Some((ref payload_input, _)) = self.input.payload() {
+            Ok(FileContentsImpl::new(payload_input.clone(), range))
+        } else {
+            Ok(FileContentsImpl::new(self.input.archive().clone(), range))
         }
     }
 

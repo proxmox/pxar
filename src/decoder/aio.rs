@@ -6,7 +6,7 @@ use std::io;
 use std::path::Path;
 
 use crate::decoder::{self, Contents, SeqRead};
-use crate::Entry;
+use crate::{Entry, PxarVariant};
 
 /// Asynchronous `pxar` decoder.
 ///
@@ -20,8 +20,8 @@ pub struct Decoder<T> {
 impl<T: tokio::io::AsyncRead> Decoder<TokioReader<T>> {
     /// Decode a `pxar` archive from a `tokio::io::AsyncRead` input.
     #[inline]
-    pub async fn from_tokio(input: T) -> io::Result<Self> {
-        Decoder::new(TokioReader::new(input)).await
+    pub async fn from_tokio(input: PxarVariant<T, T>) -> io::Result<Self> {
+        Decoder::new(input.wrap(|input| TokioReader::new(input))).await
     }
 }
 
@@ -30,13 +30,16 @@ impl Decoder<TokioReader<tokio::fs::File>> {
     /// Decode a `pxar` archive from a `tokio::io::AsyncRead` input.
     #[inline]
     pub async fn open<P: AsRef<Path>>(path: P) -> io::Result<Self> {
-        Decoder::from_tokio(tokio::fs::File::open(path.as_ref()).await?).await
+        Decoder::from_tokio(PxarVariant::Unified(
+            tokio::fs::File::open(path.as_ref()).await?,
+        ))
+        .await
     }
 }
 
 impl<T: SeqRead> Decoder<T> {
     /// Create an async decoder from an input implementing our internal read interface.
-    pub async fn new(input: T) -> io::Result<Self> {
+    pub async fn new(input: PxarVariant<T, T>) -> io::Result<Self> {
         Ok(Self {
             inner: decoder::DecoderImpl::new(input).await?,
         })
