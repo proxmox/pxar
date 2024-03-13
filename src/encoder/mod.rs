@@ -38,6 +38,24 @@ impl LinkOffset {
     }
 }
 
+/// File reference used to create payload references.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
+pub struct PayloadOffset(u64);
+
+impl PayloadOffset {
+    /// Get the raw byte offset of this link.
+    #[inline]
+    pub fn raw(self) -> u64 {
+        self.0
+    }
+
+    /// Return a new PayloadOffset, positively shifted by offset
+    #[inline]
+    pub fn add(&self, offset: u64) -> Self {
+        Self(self.0 + offset)
+    }
+}
+
 /// Sequential write interface used by the encoder's state machine.
 ///
 /// This is our internal writer trait which is available for `std::io::Write` types in the
@@ -504,6 +522,42 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         drop(file);
         self.put_file_copy_buffer(buf);
         Ok(offset)
+    }
+
+    /// Encode a payload reference pointing to given offset in the separate payload output
+    ///
+    /// Returns a file offset usable with `add_hardlink` or with error if the encoder instance has
+    /// no separate payload output or encoding failed.
+    pub async fn add_payload_ref(
+        &mut self,
+        metadata: &Metadata,
+        file_name: &Path,
+        file_size: u64,
+        payload_offset: PayloadOffset,
+    ) -> io::Result<LinkOffset> {
+        if self.output.payload().is_none() {
+            io_bail!("unable to add payload reference");
+        }
+
+        let offset = payload_offset.raw();
+        let payload_position = self.state()?.payload_position();
+        if offset < payload_position {
+            io_bail!("offset smaller than current position: {offset} < {payload_position}");
+        }
+
+        let payload_ref = PayloadRef {
+            offset,
+            size: file_size,
+        };
+        let this_offset: LinkOffset = self
+            .add_file_entry(
+                Some(metadata),
+                file_name,
+                Some((format::PXAR_PAYLOAD_REF, &payload_ref.data())),
+            )
+            .await?;
+
+        Ok(this_offset)
     }
 
     /// Return a file offset usable with `add_hardlink`.

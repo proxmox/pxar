@@ -5,7 +5,7 @@ use std::path::Path;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use crate::encoder::{self, LinkOffset, SeqWrite};
+use crate::encoder::{self, LinkOffset, PayloadOffset, SeqWrite};
 use crate::format;
 use crate::{Metadata, PxarVariant};
 
@@ -94,6 +94,22 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
     //         content.as_async_reader(),
     //     ).await
     // }
+
+    /// Encode a payload reference pointing to given offset in the separate payload output
+    ///
+    /// Returns with error if the encoder instance has no separate payload output or encoding
+    /// failed.
+    pub async fn add_payload_ref(
+        &mut self,
+        metadata: &Metadata,
+        file_name: &Path,
+        file_size: u64,
+        payload_offset: PayloadOffset,
+    ) -> io::Result<LinkOffset> {
+        self.inner
+            .add_payload_ref(metadata, file_name.as_ref(), file_size, payload_offset)
+            .await
+    }
 
     /// Create a new subdirectory. Note that the subdirectory has to be finished by calling the
     /// `finish()` method, otherwise the entire archive will be in an error state.
