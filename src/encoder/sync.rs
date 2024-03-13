@@ -97,6 +97,11 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
         ))
     }
 
+    /// Get current payload position for payload stream
+    pub fn payload_position(&self) -> io::Result<PayloadOffset> {
+        self.inner.payload_position()
+    }
+
     /// Encode a payload reference pointing to given offset in the separate payload output
     ///
     /// Returns with error if the encoder instance has no separate payload output or encoding

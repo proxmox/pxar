@@ -75,6 +75,11 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
         })
     }
 
+    /// Get current position for payload stream
+    pub fn payload_position(&self) -> io::Result<PayloadOffset> {
+        self.inner.payload_position()
+    }
+
     // /// Convenience shortcut to add a *regular* file by path including its contents to the archive.
     // pub async fn add_file<P, F>(
     //     &mut self,

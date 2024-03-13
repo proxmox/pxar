@@ -524,6 +524,10 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         Ok(offset)
     }
 
+    pub fn payload_position(&self) -> io::Result<PayloadOffset> {
+        Ok(PayloadOffset(self.state()?.payload_position()))
+    }
+
     /// Encode a payload reference pointing to given offset in the separate payload output
     ///
     /// Returns a file offset usable with `add_hardlink` or with error if the encoder instance has
