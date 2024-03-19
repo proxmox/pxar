@@ -106,6 +106,7 @@ fn cmd_create(mut args: std::env::ArgsOs) -> Result<(), Error> {
     let mut encoder = Encoder::create(file, &meta)?;
     add_directory(&mut encoder, dir, &dir_path, &mut HashMap::new())?;
     encoder.finish()?;
+    encoder.close()?;
 
     Ok(())
 }
@@ -138,14 +139,14 @@ fn add_directory<'a, T: SeqWrite + 'a>(
 
         let meta = Metadata::from(&file_meta);
         if file_type.is_dir() {
-            let mut dir = encoder.create_directory(file_name, &meta)?;
+            encoder.create_directory(file_name, &meta)?;
             add_directory(
-                &mut dir,
+                encoder,
                 std::fs::read_dir(file_path)?,
                 root_path,
                 &mut *hardlinks,
             )?;
-            dir.finish()?;
+            encoder.finish()?;
         } else if file_type.is_symlink() {
             todo!("symlink handling");
         } else if file_type.is_file() {

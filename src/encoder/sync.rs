@@ -99,15 +99,19 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
         &mut self,
         file_name: P,
         metadata: &Metadata,
-    ) -> io::Result<Encoder<'_, T>> {
-        Ok(Encoder {
-            inner: poll_result_once(self.inner.create_directory(file_name.as_ref(), metadata))?,
-        })
+    ) -> io::Result<()> {
+        poll_result_once(self.inner.create_directory(file_name.as_ref(), metadata))
     }
 
-    /// Finish this directory. This is mandatory, otherwise the `Drop` handler will `panic!`.
-    pub fn finish(self) -> io::Result<()> {
+    /// Finish this directory. This is mandatory, encodes the end for the current directory.
+    pub fn finish(&mut self) -> io::Result<()> {
         poll_result_once(self.inner.finish())
+    }
+
+    /// Close the encoder instance. This is mandatory, encodes the end for the optional payload
+    /// output stream, if some is given
+    pub fn close(self) -> io::Result<()> {
+        poll_result_once(self.inner.close())
     }
 
     /// Add a symbolic link to the archive.

@@ -51,6 +51,9 @@ fn test1() {
     encoder
         .finish()
         .expect("failed to finish encoding the pxar archive");
+    encoder
+        .close()
+        .expect("failed to close the encoder instance");
 
     assert!(!file.is_empty(), "encoder did not write any data");
 

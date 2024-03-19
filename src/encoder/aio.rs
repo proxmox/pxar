@@ -98,18 +98,21 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
         &mut self,
         file_name: P,
         metadata: &Metadata,
-    ) -> io::Result<Encoder<'_, T>> {
-        Ok(Encoder {
-            inner: self
-                .inner
-                .create_directory(file_name.as_ref(), metadata)
-                .await?,
-        })
+    ) -> io::Result<()> {
+        self.inner
+            .create_directory(file_name.as_ref(), metadata)
+            .await
     }
 
-    /// Finish this directory. This is mandatory, otherwise the `Drop` handler will `panic!`.
-    pub async fn finish(self) -> io::Result<()> {
+    /// Finish this directory. This is mandatory, encodes the end for the current directory.
+    pub async fn finish(&mut self) -> io::Result<()> {
         self.inner.finish().await
+    }
+
+    /// Close the encoder instance. This is mandatory, encodes the end for the optional payload
+    /// output stream, if some is given
+    pub async fn close(self) -> io::Result<()> {
+        self.inner.close().await
     }
 
     /// Add a symbolic link to the archive.
@@ -295,11 +298,12 @@ mod test {
                 .await
                 .unwrap();
             {
-                let mut dir = encoder
+                encoder
                     .create_directory("baba", &Metadata::dir_builder(0o700).build())
                     .await
                     .unwrap();
-                dir.create_file(&Metadata::file_builder(0o755).build(), "abab", 1024)
+                encoder
+                    .create_file(&Metadata::file_builder(0o755).build(), "abab", 1024)
                     .await
                     .unwrap();
             }

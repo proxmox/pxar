@@ -144,12 +144,12 @@ impl Entry {
 
             EntryKind::Directory(entries) => {
                 self.no_hardlink()?;
-                let mut dir = encoder.create_directory(&self.name, &self.metadata)?;
+                encoder.create_directory(&self.name, &self.metadata)?;
                 let path = path.join(&self.name);
                 for entry in entries {
-                    entry.encode_into(&mut dir, hardlinks, &path)?;
+                    entry.encode_into(encoder, hardlinks, &path)?;
                 }
-                dir.finish()?;
+                encoder.finish()?;
             }
 
             EntryKind::Symlink(path) => {
