@@ -342,15 +342,23 @@ impl<'a, T: SeqWrite + 'a> Drop for EncoderImpl<'a, T> {
 
 impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
     pub async fn new(
-        output: PxarVariant<EncoderOutput<'a, T>, T>,
+        mut output: PxarVariant<EncoderOutput<'a, T>, T>,
         metadata: &Metadata,
     ) -> io::Result<EncoderImpl<'a, T>> {
         if !metadata.is_dir() {
             io_bail!("directory metadata must contain the directory mode flag");
         }
+
+        let mut state = EncoderState::default();
+        if let Some(payload_output) = output.payload_mut() {
+            let header = format::Header::with_content_size(format::PXAR_PAYLOAD_START_MARKER, 0);
+            header.check_header_size()?;
+            seq_write_struct(payload_output, header, &mut state.payload_write_position).await?;
+        }
+
         let mut this = Self {
             output,
-            state: vec![EncoderState::default()],
+            state: vec![state],
             finished: false,
             file_copy_buffer: Arc::new(Mutex::new(unsafe {
                 crate::util::vec_new_uninitialized(1024 * 1024)

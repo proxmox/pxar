@@ -106,6 +106,8 @@ pub const PXAR_PAYLOAD_REF: u64 = 0x419d3d6bc4ba977e;
 pub const PXAR_GOODBYE: u64 = 0x2fec4fa642d5731d;
 /// The end marker used in the GOODBYE object
 pub const PXAR_GOODBYE_TAIL_MARKER: u64 = 0xef5eed5b753e1555;
+/// The start marker used in the separate payload stream
+pub const PXAR_PAYLOAD_START_MARKER: u64 = 0x834c68c2194a4ed2;
 /// The end marker used in the separate payload stream
 pub const PXAR_PAYLOAD_TAIL_MARKER: u64 = 0x6c72b78b984c81b5;
 

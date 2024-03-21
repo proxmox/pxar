@@ -205,8 +205,21 @@ pub(crate) enum ItemResult {
 }
 
 impl<I: SeqRead> DecoderImpl<I> {
-    pub async fn new(input: PxarVariant<I, I>) -> io::Result<Self> {
-        Self::new_full(input, "/".into(), false).await
+    pub async fn new(mut input: PxarVariant<I, I>) -> io::Result<Self> {
+        let payload_consumed = if let Some(payload_input) = input.payload_mut() {
+            let header: Header = seq_read_entry(payload_input).await?;
+            if header.htype != format::PXAR_PAYLOAD_START_MARKER {
+                io_bail!(
+                    "unexpected header in payload input: expected {:#x?} , got {header:#x?}",
+                    format::PXAR_PAYLOAD_START_MARKER,
+                );
+            }
+            header.full_size()
+        } else {
+            0
+        };
+
+        Self::new_full(input, "/".into(), false, payload_consumed).await
     }
 
     pub(crate) fn input(&self) -> &I {
@@ -217,8 +230,9 @@ impl<I: SeqRead> DecoderImpl<I> {
         input: PxarVariant<I, I>,
         path: PathBuf,
         eof_after_entry: bool,
+        payload_consumed: u64,
     ) -> io::Result<Self> {
-        let this = DecoderImpl {
+        Ok(DecoderImpl {
             input,
             current_header: unsafe { mem::zeroed() },
             entry: Entry {
@@ -229,13 +243,9 @@ impl<I: SeqRead> DecoderImpl<I> {
             path_lengths: Vec::new(),
             state: State::Begin,
             with_goodbye_tables: false,
-            payload_consumed: 0,
+            payload_consumed,
             eof_after_entry,
-        };
-
-        // this.read_next_entry().await?;
-
-        Ok(this)
+        })
     }
 
     /// Get the next file entry, recursing into directories.

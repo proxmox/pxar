@@ -238,7 +238,7 @@ async fn get_decoder<T: ReadAt>(
         |input| SeqReadAtAdapter::new(input, entry_range.clone()),
         |(payload_input, range)| SeqReadAtAdapter::new(payload_input, range),
     );
-    DecoderImpl::new_full(input, path, true).await
+    DecoderImpl::new_full(input, path, true, 0).await
 }
 
 // NOTE: This performs the Decoder::read_next_item() behavior! Keep in mind when changing!
