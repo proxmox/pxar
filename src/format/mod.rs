@@ -87,6 +87,7 @@ pub const PXAR_FORMAT_VERSION: u64 = 0x730f6c75df16a40d;
 pub const PXAR_ENTRY: u64 = 0xd5956474e588acef;
 /// Previous version of the entry struct
 pub const PXAR_ENTRY_V1: u64 = 0x11da850a1c1cceff;
+pub const PXAR_PRELUDE: u64 = 0xe309d79d9f7b771b;
 pub const PXAR_FILENAME: u64 = 0x16701121063917b3;
 pub const PXAR_SYMLINK: u64 = 0x27f971e7dbf5dc5f;
 pub const PXAR_DEVICE: u64 = 0x9fc9e906586d5ce9;
@@ -147,6 +148,7 @@ impl Header {
     #[inline]
     pub fn max_content_size(&self) -> u64 {
         match self.htype {
+            PXAR_PRELUDE => u64::MAX - (size_of::<Self>() as u64),
             // + null-termination
             PXAR_FILENAME => crate::util::MAX_FILENAME_LEN + 1,
             // + null-termination
@@ -190,6 +192,7 @@ impl Display for Header {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let readable = match self.htype {
             PXAR_FORMAT_VERSION => "FORMAT_VERSION",
+            PXAR_PRELUDE => "PRELUDE",
             PXAR_FILENAME => "FILENAME",
             PXAR_SYMLINK => "SYMLINK",
             PXAR_HARDLINK => "HARDLINK",
@@ -709,6 +712,29 @@ impl Device {
             minor:  dev        & 0x0000_00ff |
                    (dev >> 12) & 0xffff_ff00,
         }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Prelude {
+    pub data: Vec<u8>,
+}
+
+impl Prelude {
+    pub fn as_os_str(&self) -> &OsStr {
+        self.as_ref()
+    }
+}
+
+impl AsRef<[u8]> for Prelude {
+    fn as_ref(&self) -> &[u8] {
+        &self.data
+    }
+}
+
+impl AsRef<OsStr> for Prelude {
+    fn as_ref(&self) -> &OsStr {
+        OsStr::from_bytes(&self.data[..self.data.len().max(1) - 1])
     }
 }
 

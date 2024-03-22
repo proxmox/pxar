@@ -230,6 +230,7 @@ impl Entry {
                 };
             match item.kind() {
                 PxarEntryKind::Version(_) => continue,
+                PxarEntryKind::Prelude(_) => continue,
                 PxarEntryKind::GoodbyeTable => break,
                 PxarEntryKind::File { size, .. } => {
                     let mut data = Vec::new();

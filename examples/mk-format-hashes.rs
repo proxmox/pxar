@@ -16,6 +16,7 @@ const CONSTANTS: &[(&str, &str, &str)] = &[
         "PXAR_ENTRY_V1",
         "__PROXMOX_FORMAT_ENTRY__",
     ),
+    ("", "PXAR_PRELUDE", "__PROXMOX_FORMAT_PRELUDE__"),
     ("", "PXAR_FILENAME", "__PROXMOX_FORMAT_FILENAME__"),
     ("", "PXAR_SYMLINK", "__PROXMOX_FORMAT_SYMLINK__"),
     ("", "PXAR_DEVICE", "__PROXMOX_FORMAT_DEVICE__"),

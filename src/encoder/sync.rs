@@ -28,7 +28,11 @@ impl<'a, T: io::Write + 'a> Encoder<'a, StandardWriter<T>> {
     /// Encode a `pxar` archive into a regular `std::io::Write` output.
     #[inline]
     pub fn from_std(output: T, metadata: &Metadata) -> io::Result<Encoder<'a, StandardWriter<T>>> {
-        Encoder::new(PxarVariant::Unified(StandardWriter::new(output)), metadata)
+        Encoder::new(
+            PxarVariant::Unified(StandardWriter::new(output)),
+            metadata,
+            None,
+        )
     }
 }
 
@@ -41,6 +45,7 @@ impl<'a> Encoder<'a, StandardWriter<std::fs::File>> {
         Encoder::new(
             PxarVariant::Unified(StandardWriter::new(std::fs::File::create(path.as_ref())?)),
             metadata,
+            None,
         )
     }
 }
@@ -52,11 +57,15 @@ impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
     /// not allowed to use the `Waker`, as this will cause a `panic!`.
     // Optionally attach a dedicated writer to redirect the payloads of regular files to a separate
     // output.
-    pub fn new(output: PxarVariant<T, T>, metadata: &Metadata) -> io::Result<Self> {
+    pub fn new(
+        output: PxarVariant<T, T>,
+        metadata: &Metadata,
+        prelude: Option<&[u8]>,
+    ) -> io::Result<Self> {
         let output = output.wrap_multi(|output| output.into(), |payload_output| payload_output);
 
         Ok(Self {
-            inner: poll_result_once(encoder::EncoderImpl::new(output, metadata))?,
+            inner: poll_result_once(encoder::EncoderImpl::new(output, metadata, prelude))?,
         })
     }
 

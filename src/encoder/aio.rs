@@ -24,8 +24,14 @@ impl<'a, T: tokio::io::AsyncWrite + 'a> Encoder<'a, TokioWriter<T>> {
     pub async fn from_tokio(
         output: PxarVariant<T, T>,
         metadata: &Metadata,
+        prelude: Option<&[u8]>,
     ) -> io::Result<Encoder<'a, TokioWriter<T>>> {
-        Encoder::new(output.wrap(|output| TokioWriter::new(output)), metadata).await
+        Encoder::new(
+            output.wrap(|output| TokioWriter::new(output)),
+            metadata,
+            prelude,
+        )
+        .await
     }
 }
 
@@ -41,6 +47,7 @@ impl<'a> Encoder<'a, TokioWriter<tokio::fs::File>> {
                 tokio::fs::File::create(path.as_ref()).await?,
             )),
             metadata,
+            None,
         )
         .await
     }
@@ -48,10 +55,14 @@ impl<'a> Encoder<'a, TokioWriter<tokio::fs::File>> {
 
 impl<'a, T: SeqWrite + 'a> Encoder<'a, T> {
     /// Create an asynchronous encoder for an output implementing our internal write interface.
-    pub async fn new(output: PxarVariant<T, T>, metadata: &Metadata) -> io::Result<Encoder<'a, T>> {
+    pub async fn new(
+        output: PxarVariant<T, T>,
+        metadata: &Metadata,
+        prelude: Option<&[u8]>,
+    ) -> io::Result<Encoder<'a, T>> {
         let output = output.wrap_multi(|output| output.into(), |payload_output| payload_output);
         Ok(Self {
-            inner: encoder::EncoderImpl::new(output, metadata).await?,
+            inner: encoder::EncoderImpl::new(output, metadata, prelude).await?,
         })
     }
 
@@ -326,6 +337,7 @@ mod test {
             let mut encoder = Encoder::new(
                 crate::PxarVariant::Unified(DummyOutput),
                 &Metadata::dir_builder(0o700).build(),
+                None,
             )
             .await
             .unwrap();

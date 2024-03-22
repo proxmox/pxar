@@ -176,6 +176,7 @@ pub(crate) struct DecoderImpl<T> {
 #[derive(Clone, PartialEq)]
 enum State {
     Begin,
+    Prelude,
     Root,
     Default,
     InPayload {
@@ -264,10 +265,25 @@ impl<I: SeqRead> DecoderImpl<I> {
                 State::Eof => return Ok(None),
                 State::Begin => {
                     let entry = self.read_next_entry().await.map(Some);
+                    // If the first entry is of kind Version, next must be Prelude or Directory
                     if let Ok(Some(ref entry)) = entry {
                         if let EntryKind::Version(version) = entry.kind() {
                             self.version = version.clone();
-                            self.state = State::Root;
+                            self.state = State::Prelude;
+                        }
+                    }
+                    return entry;
+                }
+                State::Prelude => {
+                    let entry = self.read_next_entry().await.map(Some);
+                    if let Ok(Some(ref entry)) = entry {
+                        match entry.kind() {
+                            EntryKind::Prelude(_) => self.state = State::Root,
+                            EntryKind::Directory => self.state = State::InDirectory,
+                            _ => io_bail!(
+                                "expected directory or prelude entry, got entry kind {:?}",
+                                entry.kind()
+                            ),
                         }
                     }
                     return entry;
@@ -432,6 +448,14 @@ impl<I: SeqRead> DecoderImpl<I> {
             }
             self.current_header = header;
             self.entry.kind = EntryKind::Version(self.read_format_version().await?);
+
+            Ok(Some(self.entry.take()))
+        } else if header.htype == format::PXAR_PRELUDE {
+            if previous_state != State::Prelude {
+                io_bail!("Got format version entry at unexpected position");
+            }
+            self.current_header = header;
+            self.entry.kind = EntryKind::Prelude(self.read_prelude().await?);
 
             Ok(Some(self.entry.take()))
         } else if header.htype == format::PXAR_ENTRY || header.htype == format::PXAR_ENTRY_V1 {
@@ -796,6 +820,11 @@ impl<I: SeqRead> DecoderImpl<I> {
     async fn read_format_version(&mut self) -> io::Result<format::FormatVersion> {
         let version: u64 = seq_read_entry(self.input.archive_mut()).await?;
         FormatVersion::deserialize(version)
+    }
+
+    async fn read_prelude(&mut self) -> io::Result<format::Prelude> {
+        let data = self.read_entry_as_bytes().await?;
+        Ok(format::Prelude { data })
     }
 }
 

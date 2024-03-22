@@ -345,6 +345,9 @@ pub enum EntryKind {
     /// Pxar file format version
     Version(format::FormatVersion),
 
+    /// Pxar prelude blob
+    Prelude(format::Prelude),
+
     /// Symbolic links.
     Symlink(format::Symlink),
 

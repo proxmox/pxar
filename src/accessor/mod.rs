@@ -322,6 +322,12 @@ impl<T: Clone + ReadAt> AccessorImpl<T> {
                 .next()
                 .await
                 .ok_or_else(|| io_format_err!("unexpected EOF while decoding directory entry"))??;
+
+            if let EntryKind::Prelude(_) = entry.kind() {
+                entry = decoder.next().await.ok_or_else(|| {
+                    io_format_err!("unexpected EOF while decoding directory entry")
+                })??;
+            }
         }
 
         Ok(FileEntryImpl {
@@ -559,6 +565,12 @@ impl<T: Clone + ReadAt> DirectoryImpl<T> {
                 .next()
                 .await
                 .ok_or_else(|| io_format_err!("unexpected EOF while decoding directory entry"))??;
+
+            if let EntryKind::Prelude(_) = entry.kind() {
+                entry = decoder.next().await.ok_or_else(|| {
+                    io_format_err!("unexpected EOF while decoding directory entry")
+                })??;
+            }
         }
 
         Ok((entry, decoder))

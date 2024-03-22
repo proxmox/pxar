@@ -346,6 +346,7 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
     pub async fn new(
         mut output: PxarVariant<EncoderOutput<'a, T>, T>,
         metadata: &Metadata,
+        prelude: Option<&[u8]>,
     ) -> io::Result<EncoderImpl<'a, T>> {
         if !metadata.is_dir() {
             io_bail!("directory metadata must contain the directory mode flag");
@@ -372,6 +373,9 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         };
 
         this.encode_format_version().await?;
+        if let Some(prelude) = prelude {
+            this.encode_prelude(prelude).await?;
+        }
         this.encode_metadata(metadata).await?;
         let state = this.state_mut()?;
         state.files_offset = state.position();
@@ -771,6 +775,28 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
             self.encode_metadata(metadata).await?;
         }
         Ok(())
+    }
+
+    async fn encode_prelude(&mut self, prelude: &[u8]) -> io::Result<()> {
+        if self.version == FormatVersion::Version1 {
+            io_bail!("encoding prelude not supported in format version 1");
+        }
+
+        let (mut output, state) = self.output_state()?;
+        if state.write_position != (size_of::<u64>() + size_of::<format::Header>()) as u64 {
+            io_bail!(
+                "prelude must be encoded following the version header, current position {}",
+                state.write_position,
+            );
+        }
+
+        seq_write_pxar_entry(
+            output.archive_mut(),
+            format::PXAR_PRELUDE,
+            prelude,
+            &mut state.write_position,
+        )
+        .await
     }
 
     async fn encode_format_version(&mut self) -> io::Result<()> {
