@@ -17,7 +17,7 @@ use endian_trait::Endian;
 
 use crate::binary_tree_array;
 use crate::decoder::{self, DecoderImpl};
-use crate::format::{self, GoodbyeItem};
+use crate::format::{self, FormatVersion, GoodbyeItem};
 use crate::util;
 use crate::{Entry, EntryKind, PxarVariant};
 
@@ -190,6 +190,18 @@ impl<T: ReadAt> AccessorImpl<T> {
             io_bail!("too small to contain a pxar archive");
         }
 
+        let header: format::Header = read_entry_at(input.archive(), 0).await?;
+        header.check_header_size()?;
+
+        if header.htype == format::PXAR_FORMAT_VERSION {
+            let version: u64 = read_entry_at(
+                input.archive(),
+                size_of::<format::Header>() as u64,
+            )
+            .await?;
+            FormatVersion::deserialize(version)?;
+        }
+
         let input = input.wrap_multi(
             |input| input,
             |(payload_input, size)| (payload_input, 0..size),
@@ -299,10 +311,18 @@ impl<T: Clone + ReadAt> AccessorImpl<T> {
             PathBuf::new(),
         )
         .await?;
-        let entry = decoder
+        let mut entry = decoder
             .next()
             .await
             .ok_or_else(|| io_format_err!("unexpected EOF while decoding file entry"))??;
+
+        // Skip over possible Version and Prelude before the root entry of type Directory
+        if let EntryKind::Version(_) = entry.kind() {
+            entry = decoder
+                .next()
+                .await
+                .ok_or_else(|| io_format_err!("unexpected EOF while decoding directory entry"))??;
+        }
 
         Ok(FileEntryImpl {
             input: self.input.clone(),
@@ -528,10 +548,19 @@ impl<T: Clone + ReadAt> DirectoryImpl<T> {
         file_name: Option<&Path>,
     ) -> io::Result<(Entry, DecoderImpl<SeqReadAtAdapter<T>>)> {
         let mut decoder = self.get_decoder(entry_range, file_name).await?;
-        let entry = decoder
+        let mut entry = decoder
             .next()
             .await
             .ok_or_else(|| io_format_err!("unexpected EOF while decoding directory entry"))??;
+
+        // Skip over possible Version and Prelude before the root entry of type Directory
+        if let EntryKind::Version(_) = entry.kind() {
+            entry = decoder
+                .next()
+                .await
+                .ok_or_else(|| io_format_err!("unexpected EOF while decoding directory entry"))??;
+        }
+
         Ok((entry, decoder))
     }
 

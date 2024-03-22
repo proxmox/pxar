@@ -18,7 +18,7 @@ use std::task::{Context, Poll};
 
 use endian_trait::Endian;
 
-use crate::format::{self, Header};
+use crate::format::{self, FormatVersion, Header};
 use crate::util::{self, io_err_other};
 use crate::{Entry, EntryKind, Metadata, PxarVariant};
 
@@ -169,10 +169,14 @@ pub(crate) struct DecoderImpl<T> {
     /// The random access code uses decoders for sub-ranges which may not end in a `PAYLOAD` for
     /// entries like FIFOs or sockets, so there we explicitly allow an item to terminate with EOF.
     eof_after_entry: bool,
+    /// The format version as determined by the format version header
+    version: format::FormatVersion,
 }
 
+#[derive(Clone, PartialEq)]
 enum State {
     Begin,
+    Root,
     Default,
     InPayload {
         offset: u64,
@@ -245,6 +249,7 @@ impl<I: SeqRead> DecoderImpl<I> {
             with_goodbye_tables: false,
             payload_consumed,
             eof_after_entry,
+            version: FormatVersion::default(),
         })
     }
 
@@ -257,7 +262,19 @@ impl<I: SeqRead> DecoderImpl<I> {
         loop {
             match self.state {
                 State::Eof => return Ok(None),
-                State::Begin => return self.read_next_entry().await.map(Some),
+                State::Begin => {
+                    let entry = self.read_next_entry().await.map(Some);
+                    if let Ok(Some(ref entry)) = entry {
+                        if let EntryKind::Version(version) = entry.kind() {
+                            self.version = version.clone();
+                            self.state = State::Root;
+                        }
+                    }
+                    return entry;
+                }
+                State::Root => {
+                    return self.read_next_entry().await.map(Some);
+                }
                 State::Default => {
                     // we completely finished an entry, so now we're going "up" in the directory
                     // hierarchy and parse the next PXAR_FILENAME or the PXAR_GOODBYE:
@@ -388,6 +405,7 @@ impl<I: SeqRead> DecoderImpl<I> {
     }
 
     async fn read_next_entry_or_eof(&mut self) -> io::Result<Option<Entry>> {
+        let previous_state = self.state.clone();
         self.state = State::Default;
         self.entry.clear_data();
 
@@ -406,6 +424,14 @@ impl<I: SeqRead> DecoderImpl<I> {
             // Hardlinks have no metadata and no additional items.
             self.entry.metadata = Metadata::default();
             self.entry.kind = EntryKind::Hardlink(self.read_hardlink().await?);
+
+            Ok(Some(self.entry.take()))
+        } else if header.htype == format::PXAR_FORMAT_VERSION {
+            if previous_state != State::Begin {
+                io_bail!("Got format version entry at unexpected position");
+            }
+            self.current_header = header;
+            self.entry.kind = EntryKind::Version(self.read_format_version().await?);
 
             Ok(Some(self.entry.take()))
         } else if header.htype == format::PXAR_ENTRY || header.htype == format::PXAR_ENTRY_V1 {
@@ -765,6 +791,11 @@ impl<I: SeqRead> DecoderImpl<I> {
     async fn read_payload_ref(&mut self) -> io::Result<format::PayloadRef> {
         self.current_header.check_header_size()?;
         seq_read_entry(self.input.archive_mut()).await
+    }
+
+    async fn read_format_version(&mut self) -> io::Result<format::FormatVersion> {
+        let version: u64 = seq_read_entry(self.input.archive_mut()).await?;
+        FormatVersion::deserialize(version)
     }
 }
 

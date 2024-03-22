@@ -342,6 +342,9 @@ impl Acl {
 /// Identifies whether the entry is a file, symlink, directory, etc.
 #[derive(Clone, Debug)]
 pub enum EntryKind {
+    /// Pxar file format version
+    Version(format::FormatVersion),
+
     /// Symbolic links.
     Symlink(format::Symlink),
 

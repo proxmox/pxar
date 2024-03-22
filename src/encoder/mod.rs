@@ -17,7 +17,7 @@ use endian_trait::Endian;
 
 use crate::binary_tree_array;
 use crate::decoder::{self, SeqRead};
-use crate::format::{self, GoodbyeItem, PayloadRef};
+use crate::format::{self, FormatVersion, GoodbyeItem, PayloadRef};
 use crate::{Metadata, PxarVariant};
 
 pub mod aio;
@@ -326,6 +326,8 @@ pub(crate) struct EncoderImpl<'a, T: SeqWrite + 'a> {
     /// Since only the "current" entry can be actively writing files, we share the file copy
     /// buffer.
     file_copy_buffer: Arc<Mutex<Vec<u8>>>,
+    /// Pxar format version to encode
+    version: format::FormatVersion,
 }
 
 impl<'a, T: SeqWrite + 'a> Drop for EncoderImpl<'a, T> {
@@ -350,11 +352,14 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         }
 
         let mut state = EncoderState::default();
-        if let Some(payload_output) = output.payload_mut() {
+        let version = if let Some(payload_output) = output.payload_mut() {
             let header = format::Header::with_content_size(format::PXAR_PAYLOAD_START_MARKER, 0);
             header.check_header_size()?;
             seq_write_struct(payload_output, header, &mut state.payload_write_position).await?;
-        }
+            format::FormatVersion::Version2
+        } else {
+            format::FormatVersion::Version1
+        };
 
         let mut this = Self {
             output,
@@ -363,8 +368,10 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
             file_copy_buffer: Arc::new(Mutex::new(unsafe {
                 crate::util::vec_new_uninitialized(1024 * 1024)
             })),
+            version,
         };
 
+        this.encode_format_version().await?;
         this.encode_metadata(metadata).await?;
         let state = this.state_mut()?;
         state.files_offset = state.position();
@@ -547,6 +554,10 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         file_size: u64,
         payload_offset: PayloadOffset,
     ) -> io::Result<LinkOffset> {
+        if self.version == FormatVersion::Version1 {
+            io_bail!("payload references not supported in format version 1");
+        }
+
         if self.output.payload().is_none() {
             io_bail!("unable to add payload reference");
         }
@@ -759,6 +770,25 @@ impl<'a, T: SeqWrite + 'a> EncoderImpl<'a, T> {
         if let Some(metadata) = metadata {
             self.encode_metadata(metadata).await?;
         }
+        Ok(())
+    }
+
+    async fn encode_format_version(&mut self) -> io::Result<()> {
+        if let Some(version_bytes) = self.version.serialize() {
+            let (mut output, state) = self.output_state()?;
+            if state.write_position != 0 {
+                io_bail!("format version must be encoded at the beginning of an archive");
+            }
+
+            return seq_write_pxar_entry(
+                output.archive_mut(),
+                format::PXAR_FORMAT_VERSION,
+                &version_bytes,
+                &mut state.write_position,
+            )
+            .await;
+        }
+
         Ok(())
     }
 
