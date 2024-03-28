@@ -166,7 +166,7 @@ where
     seq_write_all(output, &[0u8], position).await
 }
 
-/// Write a pxar entry consiting of an endian-swappable struct.
+/// Write a pxar entry consisting of an endian-swappable struct.
 async fn seq_write_pxar_struct_entry<E, T>(
     output: &mut T,
     htype: u64,
@@ -188,7 +188,7 @@ where
 pub enum EncodeError {
     /// The user dropped a `File` without without finishing writing all of its contents.
     ///
-    /// This is required because the payload lengths is written out at the begining and decoding
+    /// This is required because the payload lengths is written out at the beginning and decoding
     /// requires there to follow the right amount of data.
     IncompleteFile,
 
