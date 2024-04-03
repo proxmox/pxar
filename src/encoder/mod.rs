@@ -186,10 +186,10 @@ where
 /// Error conditions caused by wrong usage of this crate.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EncodeError {
-    /// The user dropped a `File` without without finishing writing all of its contents.
+    /// The user dropped a `File` without finishing writing all of its contents.
     ///
-    /// This is required because the payload lengths is written out at the beginning and decoding
-    /// requires there to follow the right amount of data.
+    /// Completely writing the contents is required because the payload length is written out first
+    /// and decoding requires the the encoded length and the following data to match.
     IncompleteFile,
 
     /// The user dropped a directory without finalizing it.
