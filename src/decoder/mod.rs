@@ -8,6 +8,7 @@ use std::ffi::OsString;
 use std::future::poll_fn;
 use std::io;
 use std::mem::{self, size_of, size_of_val, MaybeUninit};
+use std::ops::Range;
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
@@ -54,6 +55,11 @@ pub trait SeqRead {
     /// return `None`.
     fn poll_position(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<Option<io::Result<u64>>> {
         Poll::Ready(None)
+    }
+
+    /// Update range for Readers implementing `SeqReadAtAdapter`
+    fn update_range(&mut self, _range: Range<u64>) {
+        // nothing to be done, only implemented by `SeqReadAtAdapter`s
     }
 }
 
@@ -581,6 +587,10 @@ impl<I: SeqRead> DecoderImpl<I> {
                         let to_skip = payload_ref.offset - self.payload_consumed;
                         Self::skip(payload_input, to_skip as usize).await?;
                         self.payload_consumed += to_skip;
+                    } else {
+                        let start = payload_ref.offset;
+                        let end = start + payload_ref.size + size_of::<Header>() as u64;
+                        payload_input.update_range(start..end);
                     }
 
                     let header: Header = seq_read_entry(payload_input).await?;

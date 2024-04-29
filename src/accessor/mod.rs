@@ -1013,4 +1013,8 @@ impl<T: ReadAt> decoder::SeqRead for SeqReadAtAdapter<T> {
     fn poll_position(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<Option<io::Result<u64>>> {
         Poll::Ready(Some(Ok(self.range.start)))
     }
+
+    fn update_range(&mut self, range: Range<u64>) {
+        self.range = range;
+    }
 }
