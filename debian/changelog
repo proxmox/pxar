@@ -1,3 +1,22 @@
+rust-pxar (0.11.0-1) unstable; urgency=medium
+
+  * decoder: aio: Make `TokioReader` public
+
+  * format/examples: Fix typo in PXAR_PAYLOAD description
+
+  * encoder: fix typos
+
+  * encoder: move to stack based state tracking
+
+  * encoder/decoder/accessor/format: support split V2 archives
+    - add payload stream start marker
+    - add payload stream finish marker
+    - new pxar entry type `PXAR_PAYLOAD_REF`
+    - new pxar entry type `Version`
+    - new pxar entry type `Prelude`
+
+ -- Proxmox Support Team <support@proxmox.com>  Wed, 05 Jun 2024 15:56:54 +0200
+
 rust-pxar (0.10.2-1) unstable; urgency=medium
 
   * don't hold a temporary buffer mutex across await point

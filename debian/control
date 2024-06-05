@@ -13,7 +13,7 @@ Build-Depends: debhelper (>= 12),
  librust-siphasher-0.3+default-dev <!nocheck>,
  librust-tokio-1-dev <!nocheck>
 Maintainer: Proxmox Support Team <support@proxmox.com>
-Standards-Version: 4.6.1
+Standards-Version: 4.6.2
 Vcs-Git: 
 Vcs-Browser: 
 X-Cargo-Crate: pxar
@@ -43,8 +43,7 @@ Provides:
  librust-pxar-0.10.2-dev (= ${binary:Version}),
  librust-pxar-0.10.2+test-harness-dev (= ${binary:Version})
 Description: Proxmox Archive format support library - Rust source code
- This package contains the source for the Rust pxar crate, packaged by debcargo
- for use with cargo and dh-cargo.
+ Source code for Debianized Rust crate "pxar"
 
 Package: librust-pxar+async-example-dev
 Architecture: any
