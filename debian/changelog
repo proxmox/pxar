@@ -1,3 +1,9 @@
+rust-pxar (0.10.3-1) bullseye; urgency=medium
+
+  * format/decoder/accessor: backport PXAR_FORMAT_VERSION header
+
+ -- Proxmox Support Team <support@proxmox.com>  Thu, 06 Jun 2024 13:43:40 +0200
+
 rust-pxar (0.10.2-1) unstable; urgency=medium
 
   * don't hold a temporary buffer mutex across await point
