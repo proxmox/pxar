@@ -374,6 +374,9 @@ impl<I: SeqRead> DecoderImpl<I> {
             self.entry.kind = EntryKind::Hardlink(self.read_hardlink().await?);
 
             Ok(Some(self.entry.take()))
+        } else if header.htype == format::PXAR_FORMAT_VERSION {
+            let version: u64 = seq_read_entry(&mut self.input).await?;
+            io_bail!("format version {version} not compatible with this client");
         } else if header.htype == format::PXAR_ENTRY || header.htype == format::PXAR_ENTRY_V1 {
             if header.htype == format::PXAR_ENTRY {
                 self.entry.metadata = Metadata {

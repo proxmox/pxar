@@ -2,6 +2,11 @@ use pxar::format::hash_filename;
 
 const CONSTANTS: &[(&str, &str, &str)] = &[
     (
+        "Pxar format version entry, fallback to version 1 if not present",
+        "PXAR_FORMAT_VERSION",
+        "__PROXMOX_FORMAT_VERSION__",
+    ),
+    (
         "Beginning of an entry (current version).",
         "PXAR_ENTRY",
         "__PROXMOX_FORMAT_ENTRY_V2__",

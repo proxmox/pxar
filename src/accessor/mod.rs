@@ -190,6 +190,18 @@ impl<T: ReadAt> AccessorImpl<T> {
             io_bail!("too small to contain a pxar archive");
         }
 
+        let header: format::Header = read_entry_at(&input, 0).await?;
+        header.check_header_size()?;
+
+        if header.htype == format::PXAR_FORMAT_VERSION {
+            let version: u64 = read_entry_at(
+                &input,
+                size_of::<format::Header>() as u64,
+            )
+            .await?;
+            io_bail!("format version {version} not compatible with this client");
+        }
+
         Ok(Self {
             input,
             size,
