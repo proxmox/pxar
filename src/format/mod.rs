@@ -720,21 +720,9 @@ pub struct Prelude {
     pub data: Vec<u8>,
 }
 
-impl Prelude {
-    pub fn as_os_str(&self) -> &OsStr {
-        self.as_ref()
-    }
-}
-
 impl AsRef<[u8]> for Prelude {
     fn as_ref(&self) -> &[u8] {
         &self.data
-    }
-}
-
-impl AsRef<OsStr> for Prelude {
-    fn as_ref(&self) -> &OsStr {
-        OsStr::from_bytes(&self.data[..self.data.len().max(1) - 1])
     }
 }
 
