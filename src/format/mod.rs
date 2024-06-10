@@ -570,7 +570,7 @@ impl FormatVersion {
         match version {
             1u64 => Ok(FormatVersion::Version1),
             2u64 => Ok(FormatVersion::Version2),
-            version => io_bail!("unknown format version {version}")
+            version => io_bail!("unknown format version {version}"),
         }
     }
 
