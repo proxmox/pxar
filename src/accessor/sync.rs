@@ -1,14 +1,13 @@
 //! Blocking `pxar` random access handling.
 
 use std::io;
-use std::ops::Range;
 use std::os::unix::fs::FileExt;
 use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::Context;
 
-use crate::accessor::{self, cache::Cache, MaybeReady, ReadAt, ReadAtOperation};
+use crate::accessor::{self, cache::Cache, ContentRange, MaybeReady, ReadAt, ReadAtOperation};
 use crate::decoder::Decoder;
 use crate::format::GoodbyeItem;
 use crate::util::poll_result_once;
@@ -142,11 +141,14 @@ impl<T: Clone + ReadAt> Accessor<T> {
     ///
     /// This will provide a reader over an arbitrary range of the archive file, so unless this
     /// comes from a actual file entry data, the contents might not make much sense.
-    pub unsafe fn open_contents_at_range(&self, range: Range<u64>) -> FileContents<T> {
-        FileContents {
-            inner: unsafe { self.inner.open_contents_at_range(range) },
+    pub unsafe fn open_contents_at_range(
+        &self,
+        range: &ContentRange,
+    ) -> io::Result<FileContents<T>> {
+        Ok(FileContents {
+            inner: poll_result_once(self.inner.open_contents_at_range(range))?,
             at: 0,
-        }
+        })
     }
 
     /// Following a hardlink.
@@ -291,7 +293,7 @@ impl<T: Clone + ReadAt> FileEntry<T> {
     }
 
     /// For use with unsafe accessor methods.
-    pub fn content_range(&self) -> io::Result<Option<Range<u64>>> {
+    pub fn content_range(&self) -> io::Result<Option<ContentRange>> {
         self.inner.content_range()
     }
 

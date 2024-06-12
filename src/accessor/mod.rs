@@ -17,7 +17,7 @@ use endian_trait::Endian;
 
 use crate::binary_tree_array;
 use crate::decoder::{self, DecoderImpl};
-use crate::format::{self, FormatVersion, GoodbyeItem};
+use crate::format::{self, FormatVersion, GoodbyeItem, PayloadRef};
 use crate::util;
 use crate::{Entry, EntryKind, PxarVariant};
 
@@ -52,6 +52,16 @@ impl EntryRangeInfo {
             entry_range,
         }
     }
+}
+
+/// Stores a content range to be accessed via the `Accessor` as well as the payload reference to
+/// perform consistency checks on payload references for archives accessed via split variant input.
+#[derive(Clone)]
+pub struct ContentRange {
+    // Range of the content
+    content: Range<u64>,
+    // Optional payload ref
+    payload_ref: Option<PayloadRef>,
 }
 
 /// awaitable version of `ReadAt`.
@@ -335,13 +345,12 @@ impl<T: Clone + ReadAt> AccessorImpl<T> {
         })
     }
 
-    /// Allow opening arbitrary contents from a specific range.
-    pub unsafe fn open_contents_at_range(&self, range: Range<u64>) -> FileContentsImpl<T> {
-        if let Some((payload_input, _)) = &self.input.payload() {
-            FileContentsImpl::new(payload_input.clone(), range)
-        } else {
-            FileContentsImpl::new(self.input.archive().clone(), range)
-        }
+    /// Open contents at provided range
+    pub async fn open_contents_at_range(
+        &self,
+        range: &ContentRange,
+    ) -> io::Result<FileContentsImpl<T>> {
+        FileContentsImpl::new(&self.input, range).await
     }
 
     /// Following a hardlink breaks a couple of conventions we otherwise have, particularly we will
@@ -758,7 +767,7 @@ impl<T: Clone + ReadAt> FileEntryImpl<T> {
     }
 
     /// For use with unsafe accessor methods.
-    pub fn content_range(&self) -> io::Result<Option<Range<u64>>> {
+    pub fn content_range(&self) -> io::Result<Option<ContentRange>> {
         match self.entry.kind {
             EntryKind::File { offset: None, .. } => {
                 io_bail!("cannot open file, reader provided no offset")
@@ -767,7 +776,10 @@ impl<T: Clone + ReadAt> FileEntryImpl<T> {
                 size,
                 offset: Some(offset),
                 payload_offset: None,
-            } => Ok(Some(offset..(offset + size))),
+            } => Ok(Some(ContentRange {
+                content: offset..(offset + size),
+                payload_ref: None,
+            })),
             // Payload offset beats regular offset if some
             EntryKind::File {
                 size,
@@ -775,7 +787,13 @@ impl<T: Clone + ReadAt> FileEntryImpl<T> {
                 payload_offset: Some(payload_offset),
             } => {
                 let start_offset = payload_offset + size_of::<format::Header>() as u64;
-                Ok(Some(start_offset..start_offset + size))
+                Ok(Some(ContentRange {
+                    content: start_offset..start_offset + size,
+                    payload_ref: Some(PayloadRef {
+                        offset: payload_offset,
+                        size,
+                    }),
+                }))
             }
             _ => Ok(None),
         }
@@ -785,11 +803,8 @@ impl<T: Clone + ReadAt> FileEntryImpl<T> {
         let range = self
             .content_range()?
             .ok_or_else(|| io_format_err!("not a file"))?;
-        if let Some((ref payload_input, _)) = self.input.payload() {
-            Ok(FileContentsImpl::new(payload_input.clone(), range))
-        } else {
-            Ok(FileContentsImpl::new(self.input.archive().clone(), range))
-        }
+
+        FileContentsImpl::new(&self.input, &range).await
     }
 
     #[inline]
@@ -897,8 +912,25 @@ pub(crate) struct FileContentsImpl<T> {
 }
 
 impl<T: Clone + ReadAt> FileContentsImpl<T> {
-    pub fn new(input: T, range: Range<u64>) -> Self {
-        Self { input, range }
+    async fn new(
+        input: &PxarVariant<T, (T, Range<u64>)>,
+        range: &ContentRange,
+    ) -> io::Result<Self> {
+        let (input, range) = if let Some((payload_input, payload_range)) = input.payload() {
+            if let Some(payload_ref) = &range.payload_ref {
+                let header: format::Header =
+                    read_entry_at(payload_input, payload_ref.offset).await?;
+                format::check_payload_header_and_size(&header, payload_ref.size)?;
+            }
+            if payload_range.start > range.content.start || payload_range.end < range.content.end {
+                io_bail!("out of range access for payload");
+            }
+            (payload_input.clone(), range.content.clone())
+        } else {
+            (input.archive().clone(), range.content.clone())
+        };
+
+        Ok(Self { input, range })
     }
 
     #[inline]
