@@ -194,11 +194,8 @@ impl<T: ReadAt> AccessorImpl<T> {
         header.check_header_size()?;
 
         if header.htype == format::PXAR_FORMAT_VERSION {
-            let version: u64 = read_entry_at(
-                input.archive(),
-                size_of::<format::Header>() as u64,
-            )
-            .await?;
+            let version: u64 =
+                read_entry_at(input.archive(), size_of::<format::Header>() as u64).await?;
             FormatVersion::deserialize(version)?;
         }
 
