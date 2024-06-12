@@ -182,6 +182,7 @@ enum State {
     InPayload {
         offset: u64,
         size: u64,
+        header_checked: bool,
     },
 
     /// file entries with no data (fifo, socket)
@@ -296,8 +297,16 @@ impl<I: SeqRead> DecoderImpl<I> {
                     // hierarchy and parse the next PXAR_FILENAME or the PXAR_GOODBYE:
                     self.read_next_item().await?;
                 }
-                State::InPayload { offset, .. } => {
+                State::InPayload {
+                    offset,
+                    header_checked,
+                    ..
+                } => {
                     if self.input.payload().is_some() {
+                        if !header_checked {
+                            // header is only checked if payload has been accessed
+                            self.payload_consumed += size_of::<Header>() as u64;
+                        }
                         // Update consumed payload as given by the offset referenced by the content reader
                         self.payload_consumed += offset;
                     } else {
@@ -370,19 +379,31 @@ impl<I: SeqRead> DecoderImpl<I> {
         }
     }
 
-    pub fn content_reader(&mut self) -> Option<Contents<I>> {
-        if let State::InPayload { offset, size } = &mut self.state {
-            if self.input.payload().is_some() {
-                Some(Contents::new(
+    pub async fn content_reader(&mut self) -> Result<Option<Contents<I>>, io::Error> {
+        if let State::InPayload {
+            offset,
+            size,
+            header_checked,
+        } = &mut self.state
+        {
+            if let Some(payload_input) = self.input.payload_mut() {
+                if !*header_checked {
+                    let header: Header = seq_read_entry(payload_input).await?;
+                    self.payload_consumed += size_of::<Header>() as u64;
+                    format::check_payload_header_and_size(&header, *size)?;
+                    *header_checked = true;
+                }
+
+                Ok(Some(Contents::new(
                     self.input.payload_mut().unwrap(),
                     offset,
                     *size,
-                ))
+                )))
             } else {
-                Some(Contents::new(self.input.archive_mut(), offset, *size))
+                Ok(Some(Contents::new(self.input.archive_mut(), offset, *size)))
             }
         } else {
-            None
+            Ok(None)
         }
     }
 
@@ -621,6 +642,7 @@ impl<I: SeqRead> DecoderImpl<I> {
                 };
                 self.state = State::InPayload {
                     offset: 0,
+                    header_checked: false,
                     size: self.current_header.content_size(),
                 };
                 return Ok(ItemResult::Entry);
@@ -652,23 +674,6 @@ impl<I: SeqRead> DecoderImpl<I> {
                         let end = start + payload_ref.size + size_of::<Header>() as u64;
                         payload_input.update_range(start..end);
                     }
-
-                    let header: Header = seq_read_entry(payload_input).await?;
-                    if header.htype != format::PXAR_PAYLOAD {
-                        io_bail!(
-                            "unexpected header in payload input: expected {} , got {header}",
-                            format::PXAR_PAYLOAD,
-                        );
-                    }
-                    self.payload_consumed += size_of::<Header>() as u64;
-
-                    if header.content_size() != payload_ref.size {
-                        io_bail!(
-                            "encountered payload size mismatch: got {}, expected {}",
-                            payload_ref.size,
-                            header.content_size(),
-                        );
-                    }
                 }
 
                 self.entry.kind = EntryKind::File {
@@ -678,6 +683,7 @@ impl<I: SeqRead> DecoderImpl<I> {
                 };
                 self.state = State::InPayload {
                     offset: 0,
+                    header_checked: false,
                     size: payload_ref.size,
                 };
                 return Ok(ItemResult::Entry);
