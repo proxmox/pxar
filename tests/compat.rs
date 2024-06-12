@@ -125,6 +125,7 @@ fn test_archive() {
     let mut content = Vec::new();
     decoder
         .contents()
+        .expect("failed to get contents from decoder")
         .expect("failed to get contents for file entry")
         .read_to_end(&mut content)
         .expect("failed to read test file contents");

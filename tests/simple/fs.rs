@@ -235,7 +235,7 @@ impl Entry {
                 PxarEntryKind::File { size, .. } => {
                     let mut data = Vec::new();
                     decoder
-                        .contents()
+                        .contents()?
                         .ok_or_else(|| {
                             format_err!("failed to get contents for file entry: {:?}", item.path())
                         })?
