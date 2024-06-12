@@ -729,7 +729,7 @@ impl AsRef<[u8]> for Prelude {
 #[cfg(all(test, target_os = "linux"))]
 #[test]
 fn test_linux_devices() {
-    let c_dev = unsafe { ::libc::makedev(0xabcd_1234, 0xdcba_5678) };
+    let c_dev = ::libc::makedev(0xabcd_1234, 0xdcba_5678);
     let dev = Device::from_dev_t(c_dev);
     assert_eq!(dev.to_dev_t(), c_dev);
 }
