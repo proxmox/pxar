@@ -823,3 +823,24 @@ pub fn check_file_name(path: &Path) -> io::Result<()> {
         Ok(())
     }
 }
+
+/// Check if provided header is of type payload and the headers content size matches given size.
+///
+/// Returns an [`io::Error`](std::io::Error) of type [`Other`](std::io::ErrorKind::Other) if that's
+/// not the case.
+pub(crate) fn check_payload_header_and_size(header: &Header, size: u64) -> io::Result<()> {
+    header.check_header_size()?;
+
+    if header.htype != PXAR_PAYLOAD {
+        io_bail!("unexpected header: expected {PXAR_PAYLOAD:x?} , got {header:x?}");
+    }
+
+    if header.content_size() != size {
+        io_bail!(
+            "encountered size mismatch: expected {}, got {size}",
+            header.content_size()
+        );
+    }
+
+    Ok(())
+}
