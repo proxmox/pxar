@@ -1,3 +1,13 @@
+rust-pxar (0.12.0-1) unstable; urgency=medium
+
+  * format: add helper for payload header consistency checks
+
+  * decoder: move payload header check for split input
+
+  * accessor: adapt and restrict contents access
+
+ -- Proxmox Support Team <support@proxmox.com>  Fri, 14 Jun 2024 12:50:05 +0200
+
 rust-pxar (0.11.1-1) unstable; urgency=medium
 
   * format/prelude: drop OsStr part
