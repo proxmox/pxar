@@ -55,4 +55,4 @@ upload: build/$(DEB)
 	    dcmd --deb rust-pxar_*.changes \
 	    | grep -v '.changes$$' \
 	    | tar -cf- -T- \
-	    | echo ssh -X repoman@repo.proxmox.com upload --product devel --dist $(UPLOAD_DIST)
+	    | ssh -X repoman@repo.proxmox.com upload --product devel --dist $(UPLOAD_DIST)
