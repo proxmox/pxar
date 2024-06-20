@@ -1,8 +1,8 @@
-rust-pxar (0.12.0-2) UNRELEASED; urgency=medium
+rust-pxar (0.12.0-2) unstable; urgency=medium
 
   * drop bitflags dependency
 
- -- Proxmox Support Team <support@proxmox.com>  Thu, 20 Jun 2024 13:07:49 +0200
+ -- Proxmox Support Team <support@proxmox.com>  Thu, 20 Jun 2024 13:34:40 +0200
 
 rust-pxar (0.12.0-1) unstable; urgency=medium
 
