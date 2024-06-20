@@ -6,7 +6,6 @@ Build-Depends: debhelper (>= 12),
  cargo:native <!nocheck>,
  rustc:native <!nocheck>,
  libstd-rust-dev <!nocheck>,
- librust-bitflags-1+default-dev (>= 1.2.1-~~) <!nocheck>,
  librust-endian-trait-0.6+arrays-dev <!nocheck>,
  librust-endian-trait-0.6+default-dev <!nocheck>,
  librust-libc-0.2+default-dev <!nocheck>,
@@ -24,7 +23,6 @@ Architecture: any
 Multi-Arch: same
 Depends:
  ${misc:Depends},
- librust-bitflags-1+default-dev (>= 1.2.1-~~),
  librust-endian-trait-0.6+arrays-dev,
  librust-endian-trait-0.6+default-dev,
  librust-libc-0.2+default-dev,
