@@ -40,7 +40,6 @@ test = true
 required-features = [ "test-harness" ]
 
 [dependencies]
-bitflags = "1.2.1"
 endian_trait = { version = "0.6", features = ["arrays"] }
 siphasher = "0.3"
 
