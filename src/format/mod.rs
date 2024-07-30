@@ -814,8 +814,7 @@ pub fn path_is_legal_component(path: &Path) -> bool {
 
 /// Assert sure the path consists only of [`Normal`](std::path::Component::Normal) components.
 ///
-/// Returns an [`io::Error`](std::io::Error) of type [`Other`](std::io::ErrorKind::Other) if that's
-/// not the case.
+/// Returns an [`io::Error`] of type [`Other`](std::io::ErrorKind::Other) if that's not the case.
 pub fn check_file_name(path: &Path) -> io::Result<()> {
     if !path_is_legal_component(path) {
         io_bail!("invalid file name in archive: {:?}", path);
