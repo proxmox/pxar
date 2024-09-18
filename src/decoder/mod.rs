@@ -299,14 +299,9 @@ impl<I: SeqRead> DecoderImpl<I> {
                 }
                 State::InPayload {
                     offset,
-                    header_checked,
                     ..
                 } => {
                     if self.input.payload().is_some() {
-                        if !header_checked {
-                            // header is only checked if payload has been accessed
-                            self.payload_consumed += size_of::<Header>() as u64;
-                        }
                         // Update consumed payload as given by the offset referenced by the content reader
                         self.payload_consumed += offset;
                     } else {
