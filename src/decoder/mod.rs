@@ -297,10 +297,7 @@ impl<I: SeqRead> DecoderImpl<I> {
                     // hierarchy and parse the next PXAR_FILENAME or the PXAR_GOODBYE:
                     self.read_next_item().await?;
                 }
-                State::InPayload {
-                    offset,
-                    ..
-                } => {
+                State::InPayload { offset, .. } => {
                     if self.input.payload().is_some() {
                         // Update consumed payload as given by the offset referenced by the content reader
                         self.payload_consumed += offset;
