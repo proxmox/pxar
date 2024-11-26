@@ -1,3 +1,11 @@
+rust-pxar (0.12.1-1) unstable; urgency=medium
+
+  * doc fixup
+
+  * decoder: fix incorrect accounting for header in payload input
+
+ -- Proxmox Support Team <support@proxmox.com>  Tue, 26 Nov 2024 10:31:28 +0100
+
 rust-pxar (0.12.0-2) unstable; urgency=medium
 
   * drop bitflags dependency
