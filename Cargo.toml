@@ -2,7 +2,7 @@
 name = "pxar"
 version = "0.12.1"
 authors = ["Wolfgang Bumiller <w.bumiller@proxmox.com>"]
-edition = "2021"
+edition = "2024"
 license = "AGPL-3"
 description = "Proxmox Archive format support library"
 exclude = [

@@ -32,7 +32,11 @@ pub use sync::Decoder;
 static mut SCRATCH_BUFFER: MaybeUninit<[u8; 4096]> = MaybeUninit::uninit();
 
 fn scratch_buffer() -> &'static mut [u8] {
-    unsafe { &mut (*SCRATCH_BUFFER.as_mut_ptr())[..] }
+    unsafe {
+        let ptr: *mut MaybeUninit<[u8; 4096]> = &raw mut SCRATCH_BUFFER;
+        let ptr: &mut MaybeUninit<[u8; 4096]> = &mut *ptr;
+        &mut (*ptr.as_mut_ptr())[..]
+    }
 }
 
 /// Sequential read interface used by the decoder's state machine.
