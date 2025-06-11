@@ -1,6 +1,6 @@
 [package]
 name = "pxar"
-version = "0.12.1"
+version = "1.0.0"
 authors = ["Wolfgang Bumiller <w.bumiller@proxmox.com>"]
 edition = "2024"
 license = "AGPL-3"
